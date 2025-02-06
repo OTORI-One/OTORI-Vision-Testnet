@@ -1,76 +1,93 @@
-use arch_sdk::{
-    prelude::*,
-    test_utils::*,
+use ovt_program::{
+    mock_sdk::{
+        program::AccountMeta,
+        Pubkey,
+        test_utils::TestClient,
+        AccountInfo,
+    },
+    OVTInstruction, OVTState,
 };
-use ovt_program::{OVTProgram, TokenMetadata, OVTClient};
+use borsh::BorshSerialize;
 
-#[tokio::test]
-async fn test_full_flow() {
-    // Initialize test environment
-    let test_client = TestClient::new();
+#[test]
+fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = TestClient::new();
     let program_id = Pubkey::new_unique();
+    let authority_key = Pubkey::new_unique();
     
-    // Create program accounts
-    let mint = test_client.create_mint().await;
-    let metadata = test_client.create_account::<TokenMetadata>().await;
-    let treasury = test_client.create_token_account(&mint).await;
-    let authority = Keypair::new();
+    // Create state account
+    let state_account = client.create_account(program_id)?;
 
-    // Create OVT client
-    let client = OVTClient::new(
-        &test_client,
+    // Create authority account
+    client.accounts.insert(authority_key, AccountInfo::new(authority_key, true, false));
+
+    // Initialize program
+    let instruction = OVTInstruction::Initialize {
+        treasury_pubkey_bytes: [0u8; 33],
+    };
+
+    client.process_transaction(
         program_id,
-        mint,
-        metadata,
-        treasury,
-        authority.clone(),
-    );
+        vec![
+            AccountMeta::new(state_account.key, true),
+            AccountMeta::new_readonly(authority_key, true),
+        ],
+        borsh::to_vec(&instruction).unwrap(),
+    )?;
 
-    // Initialize OVT token
-    let initial_supply = 1_000_000;
-    client.initialize(initial_supply).await.unwrap();
+    // Verify state was initialized correctly
+    let state: OVTState = client.get_account_data(&state_account.key)?;
+    assert_eq!(state.nav_sats, 0);
+    assert_eq!(state.total_supply, 0);
+    assert_eq!(state.last_nav_update, 0);
 
-    // Create test accounts
-    let buyer = Keypair::new();
-    let buyer_token_account = test_client.create_token_account(&mint).await;
+    Ok(())
+}
+
+#[test]
+fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = TestClient::new();
+    let program_id = Pubkey::new_unique();
+    let authority_key = Pubkey::new_unique();
     
-    // Test buying OVT
-    println!("Testing OVT purchase...");
-    let buy_amount = 1000;
-    let payment_proof = vec![1, 2, 3, 4]; // Simulated payment
-    client.buy_ovt(
-        buyer_token_account,
-        buy_amount,
-        payment_proof,
-    ).await.unwrap();
+    // Create state account
+    let state_account = client.create_account(program_id)?;
 
-    // Verify purchase
-    let buyer_balance = test_client.get_token_balance(&buyer_token_account).await.unwrap();
-    assert_eq!(buyer_balance, buy_amount);
-    println!("Purchase successful! Buyer balance: {}", buyer_balance);
+    // Create authority account
+    client.accounts.insert(authority_key, AccountInfo::new(authority_key, true, false));
 
-    // Test selling OVT
-    println!("Testing OVT sale...");
-    let btc_address = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx".to_string();
-    client.sell_ovt(
-        buyer_token_account,
-        buy_amount,
-        btc_address,
-    ).await.unwrap();
+    // Initialize first
+    let instruction = OVTInstruction::Initialize {
+        treasury_pubkey_bytes: [0u8; 33],
+    };
 
-    // Verify sale
-    let buyer_balance_after = test_client.get_token_balance(&buyer_token_account).await.unwrap();
-    assert_eq!(buyer_balance_after, 0);
-    println!("Sale successful! Buyer balance after: {}", buyer_balance_after);
+    client.process_transaction(
+        program_id,
+        vec![
+            AccountMeta::new(state_account.key, true),
+            AccountMeta::new_readonly(authority_key, true),
+        ],
+        borsh::to_vec(&instruction).unwrap(),
+    )?;
 
-    // Test NAV calculation
-    println!("Testing NAV calculation...");
-    client.update_nav().await.unwrap();
-    
-    // Get updated metadata
-    let metadata_data = test_client.get_account_data::<TokenMetadata>(&metadata).await.unwrap();
-    println!("Current NAV: {} sats", metadata_data.nav_sats);
-    println!("Total supply: {}", metadata_data.total_supply);
+    // Update NAV
+    let new_nav = 1_000_000; // 1M sats
+    let instruction = OVTInstruction::UpdateNAV {
+        btc_price_sats: new_nav,
+    };
 
-    println!("All tests passed successfully!");
+    client.process_transaction(
+        program_id,
+        vec![
+            AccountMeta::new(state_account.key, false),
+            AccountMeta::new_readonly(authority_key, true),
+        ],
+        borsh::to_vec(&instruction).unwrap(),
+    )?;
+
+    // Verify NAV was updated
+    let state: OVTState = client.get_account_data(&state_account.key)?;
+    assert_eq!(state.nav_sats, new_nav);
+
+    Ok(())
 } 

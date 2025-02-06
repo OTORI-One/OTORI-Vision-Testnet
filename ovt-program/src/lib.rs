@@ -1,82 +1,54 @@
-mod mock_sdk;
-use mock_sdk::{
-    prelude::*,
-    program::{Program, ProgramContext, ProgramResult, ProgramError},
-    state::{Account, AccountInfo},
-    token::{Mint, TokenAccount},
-};
+pub mod mock_sdk;
+use mock_sdk::program::{Program, ProgramContext, ProgramResult, ProgramError};
 use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use bitcoin::PublicKey;
+
+/// OVT Token identifier in Runes protocol
+pub const OVT_RUNE_SYMBOL: &str = "OVT";
+pub const OVT_DECIMALS: u8 = 8;
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct OVTProgram;
 
-/// Token metadata stored on-chain
+/// Program state storing NAV and treasury data
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug)]
-pub struct TokenMetadata {
-    /// Total supply of OVT tokens
-    pub total_supply: u64,
+pub struct OVTState {
     /// Current NAV in satoshis
     pub nav_sats: u64,
-    /// Treasury account that holds the fund's assets
-    pub treasury: Pubkey,
+    /// Treasury Bitcoin public key bytes
+    pub treasury_pubkey_bytes: [u8; 33],
+    /// Total OVT supply (tracked from Runes)
+    pub total_supply: u64,
+    /// Last NAV update timestamp
+    pub last_nav_update: u64,
 }
 
-/// SAFE investment data
-#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, Serialize, Deserialize)]
-pub struct SAFEData {
-    /// Company name
-    pub company_name: String,
-    /// Investment amount in satoshis
-    pub investment_amount_sats: u64,
-    /// Valuation cap in satoshis
-    pub valuation_cap_sats: u64,
-    /// Discount rate as basis points (e.g., 2000 = 20%)
-    pub discount_rate_bps: u16,
-    /// Unlock timestamp
-    pub unlock_time: i64,
-    /// Whether the SAFE has been converted to equity
-    pub converted: bool,
+impl OVTState {
+    pub fn set_treasury_pubkey(&mut self, pubkey: &PublicKey) {
+        let bytes = pubkey.inner.serialize();
+        self.treasury_pubkey_bytes.copy_from_slice(&bytes);
+    }
+
+    pub fn get_treasury_pubkey(&self) -> Result<PublicKey, ProgramError> {
+        PublicKey::from_slice(&self.treasury_pubkey_bytes)
+            .map_err(|_| ProgramError::InvalidAccountData)
+    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub enum OVTInstruction {
-    /// Initialize the OVT token
+    /// Initialize OVT state
     Initialize {
-        initial_supply: u64,
-    },
-    /// Mint new OVT tokens
-    Mint {
-        amount: u64,
-    },
-    /// Burn OVT tokens
-    Burn {
-        amount: u64,
-    },
-    /// Add a new SAFE investment
-    AddSAFE {
-        safe_data: SAFEData,
-    },
-    /// Update SAFE data (e.g., when converting to equity)
-    UpdateSAFE {
-        safe_id: u64,
-        new_data: SAFEData,
+        treasury_pubkey_bytes: [u8; 33],
     },
     /// Calculate and update NAV
-    UpdateNAV,
-    /// Buy OVT tokens with Bitcoin
-    BuyOVT {
-        /// Amount of OVT to buy in base units
-        ovt_amount: u64,
-        /// Bitcoin payment proof (for testnet, this will be simulated)
-        payment_proof: Vec<u8>,
+    UpdateNAV {
+        btc_price_sats: u64,
     },
-    /// Sell OVT tokens for Bitcoin
-    SellOVT {
-        /// Amount of OVT to sell in base units
-        ovt_amount: u64,
-        /// Bitcoin address to receive payment
-        btc_address: String,
+    /// Execute buyback and burn
+    BuybackBurn {
+        payment_txid: String,
+        payment_amount_sats: u64,
     },
 }
 
@@ -85,295 +57,77 @@ impl Program for OVTProgram {
         let instruction = OVTInstruction::try_from_slice(data)?;
         
         match instruction {
-            OVTInstruction::Initialize { initial_supply } => {
-                Self::process_initialize(ctx, initial_supply)
+            OVTInstruction::Initialize { treasury_pubkey_bytes } => {
+                Self::process_initialize(ctx, treasury_pubkey_bytes)
             }
-            OVTInstruction::Mint { amount } => {
-                Self::process_mint(ctx, amount)
+            OVTInstruction::UpdateNAV { btc_price_sats } => {
+                Self::process_update_nav(ctx, btc_price_sats)
             }
-            OVTInstruction::Burn { amount } => {
-                Self::process_burn(ctx, amount)
-            }
-            OVTInstruction::AddSAFE { safe_data } => {
-                Self::process_add_safe(ctx, safe_data)
-            }
-            OVTInstruction::UpdateSAFE { safe_id, new_data } => {
-                Self::process_update_safe(ctx, safe_id, new_data)
-            }
-            OVTInstruction::UpdateNAV => {
-                Self::process_update_nav(ctx)
-            }
-            OVTInstruction::BuyOVT { ovt_amount, payment_proof } => {
-                Self::process_buy_ovt(ctx, ovt_amount, payment_proof)
-            }
-            OVTInstruction::SellOVT { ovt_amount, btc_address } => {
-                Self::process_sell_ovt(ctx, ovt_amount, btc_address)
+            OVTInstruction::BuybackBurn { payment_txid, payment_amount_sats } => {
+                Self::process_buyback_burn(ctx, &payment_txid, payment_amount_sats)
             }
         }
     }
 }
 
 impl OVTProgram {
-    fn process_initialize(ctx: &ProgramContext, initial_supply: u64) -> ProgramResult {
-        let mint_info = ctx.get(0)?;
-        let metadata_info = ctx.get(1)?;
-        let treasury_info = ctx.get(2)?;
-        let authority_info = ctx.get(3)?;
+    fn process_initialize(ctx: &ProgramContext, treasury_pubkey_bytes: [u8; 33]) -> ProgramResult {
+        let state_info = ctx.get(0)?;
+        let authority_info = ctx.get(1)?;
 
-        // Verify authority signature
         if !authority_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        // Initialize mint account
-        let mint = Mint::new(
-            mint_info,
-            authority_info.key,
-            None, // No freeze authority
-            6,    // 6 decimals like Bitcoin
-        )?;
-
-        // Initialize metadata account
-        let metadata = TokenMetadata {
-            total_supply: initial_supply,
+        // Initialize new state
+        let state = OVTState {
             nav_sats: 0,
-            treasury: treasury_info.key,
+            treasury_pubkey_bytes,
+            total_supply: 0,
+            last_nav_update: 0,
         };
-        let mut metadata_account = Account { data: metadata };
-        metadata_account.set_data(metadata)?;
 
-        // Mint initial supply to treasury
-        mint.mint_to(treasury_info, initial_supply)?;
-
+        state_info.set_data(&state)?;
         Ok(())
     }
 
-    fn process_mint(ctx: &ProgramContext, amount: u64) -> ProgramResult {
-        let mint_info = ctx.get(0)?;
-        let metadata_info = ctx.get(1)?;
-        let treasury_info = ctx.get(2)?;
-        let authority_info = ctx.get(3)?;
+    fn process_update_nav(ctx: &ProgramContext, btc_price_sats: u64) -> ProgramResult {
+        let state_info = ctx.get(0)?;
+        let authority_info = ctx.get(1)?;
 
-        // Verify authority
         if !authority_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        // Update total supply
-        let mut metadata_account = Account::<TokenMetadata>::get_data(metadata_info)?;
-        metadata_account.total_supply = metadata_account.total_supply.checked_add(amount)
-            .ok_or(ProgramError::Arithmetic)?;
-        metadata_info.set_data(metadata_account)?;
-
-        // Mint tokens
-        let mint = Mint::new(
-            mint_info,
-            authority_info.key,
-            None,
-            6,
-        )?;
-        mint.mint_to(treasury_info, amount)?;
+        let mut state: OVTState = state_info.get_data()?;
+        state.nav_sats = btc_price_sats;
+        state_info.set_data(&state)?;
 
         Ok(())
     }
 
-    fn process_burn(ctx: &ProgramContext, amount: u64) -> ProgramResult {
-        let mint_info = ctx.accounts.get::<Mint>(0)?;
-        let metadata_info = ctx.accounts.get::<Account<TokenMetadata>>(1)?;
-        let treasury_info = ctx.accounts.get::<TokenAccount>(2)?;
-        let authority_info = ctx.accounts.get::<AccountInfo>(3)?;
+    fn process_buyback_burn(ctx: &ProgramContext, payment_txid: &str, payment_amount_sats: u64) -> ProgramResult {
+        let state_info = ctx.get(0)?;
+        let authority_info = ctx.get(1)?;
 
-        // Verify authority
         if !authority_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
 
-        // Update total supply
-        let mut metadata = metadata_info.get_data::<TokenMetadata>()?;
-        metadata.total_supply = metadata.total_supply.checked_sub(amount)
-            .ok_or(ProgramError::Arithmetic)?;
-        metadata_info.set_data(metadata)?;
-
-        // Burn tokens
-        let mint = Mint::new(
-            mint_info,
-            authority_info.key,
-            None,
-            6,
-        )?;
-        mint.burn(treasury_info, amount)?;
-
-        Ok(())
-    }
-
-    fn process_add_safe(ctx: &ProgramContext, safe_data: SAFEData) -> ProgramResult {
-        let safes_info = ctx.accounts.get::<Account<Vec<SAFEData>>>(0)?;
-        let authority_info = ctx.accounts.get::<AccountInfo>(1)?;
-
-        // Verify authority
-        if !authority_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        // Add SAFE to the list
-        let mut safes = safes_info.get_data::<Vec<SAFEData>>()?;
-        safes.push(safe_data);
-        safes_info.set_data(safes)?;
-
-        Ok(())
-    }
-
-    fn process_update_safe(ctx: &ProgramContext, safe_id: u64, new_data: SAFEData) -> ProgramResult {
-        let safes_info = ctx.accounts.get::<Account<Vec<SAFEData>>>(0)?;
-        let authority_info = ctx.accounts.get::<AccountInfo>(1)?;
-
-        // Verify authority
-        if !authority_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        // Update SAFE data
-        let mut safes = safes_info.get_data::<Vec<SAFEData>>()?;
-        if safe_id as usize >= safes.len() {
+        let state: OVTState = state_info.get_data()?;
+        
+        // Calculate OVT amount to burn based on current NAV
+        let _ovt_to_burn = if state.nav_sats > 0 {
+            (payment_amount_sats as u128)
+                .checked_mul(state.total_supply as u128)
+                .and_then(|product| product.checked_div(state.nav_sats as u128))
+                .and_then(|result| if result <= u64::MAX as u128 { Some(result as u64) } else { None })
+                .ok_or(ProgramError::Arithmetic)?
+        } else {
             return Err(ProgramError::InvalidArgument);
-        }
-        safes[safe_id as usize] = new_data;
-        safes_info.set_data(safes)?;
+        };
 
-        Ok(())
-    }
-
-    fn process_update_nav(ctx: &ProgramContext) -> ProgramResult {
-        let metadata_info = ctx.accounts.get::<Account<TokenMetadata>>(0)?;
-        let treasury_info = ctx.accounts.get::<TokenAccount>(1)?;
-        let safes_info = ctx.accounts.get::<Account<Vec<SAFEData>>>(2)?;
-        let oracle_info = ctx.accounts.get::<AccountInfo>(3)?;
-
-        // Get current liquid assets value from treasury
-        let treasury = treasury_info.get_data()?;
-        let liquid_value = treasury.amount;
-
-        // Calculate illiquid assets value from SAFEs
-        let safes = safes_info.get_data::<Vec<SAFEData>>()?;
-        let illiquid_value: u64 = safes.iter()
-            .filter(|safe| !safe.converted)
-            .map(|safe| safe.investment_amount_sats)
-            .sum();
-
-        // Update NAV in metadata
-        let mut metadata = metadata_info.get_data::<TokenMetadata>()?;
-        metadata.nav_sats = liquid_value.checked_add(illiquid_value)
-            .ok_or(ProgramError::Arithmetic)?;
-        metadata_info.set_data(metadata)?;
-
-        Ok(())
-    }
-
-    fn process_buy_ovt(
-        ctx: &ProgramContext,
-        ovt_amount: u64,
-        payment_proof: Vec<u8>,
-    ) -> ProgramResult {
-        let mint_info = ctx.accounts.get::<Mint>(0)?;
-        let metadata_info = ctx.accounts.get::<Account<TokenMetadata>>(1)?;
-        let treasury_info = ctx.accounts.get::<TokenAccount>(2)?;
-        let buyer_token_account = ctx.accounts.get::<TokenAccount>(3)?;
-        let buyer_info = ctx.accounts.get::<AccountInfo>(4)?;
-        let oracle_info = ctx.accounts.get::<AccountInfo>(5)?;
-
-        // Verify buyer signature
-        if !buyer_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        // Get current NAV and calculate price
-        let metadata = metadata_info.get_data::<TokenMetadata>()?;
-        let price_per_token = metadata.nav_sats.checked_div(metadata.total_supply)
-            .ok_or(ProgramError::Arithmetic)?;
-        let total_price = price_per_token.checked_mul(ovt_amount)
-            .ok_or(ProgramError::Arithmetic)?;
-
-        // For testnet: Verify simulated payment (in production this would verify Bitcoin transaction)
-        #[cfg(not(test))]
-        {
-            // TODO: Implement actual Bitcoin payment verification
-            // For now, we'll just check if the payment_proof is not empty
-            if payment_proof.is_empty() {
-                return Err(ProgramError::InvalidArgument);
-            }
-        }
-
-        // Mint tokens to buyer
-        let mint = Mint::new(
-            mint_info,
-            ctx.program_id,
-            None,
-            6,
-        )?;
-        mint.mint_to(buyer_token_account, ovt_amount)?;
-
-        // Update metadata
-        let mut metadata = metadata_info.get_data::<TokenMetadata>()?;
-        metadata.total_supply = metadata.total_supply.checked_add(ovt_amount)
-            .ok_or(ProgramError::Arithmetic)?;
-        metadata_info.set_data(metadata)?;
-
-        Ok(())
-    }
-
-    fn process_sell_ovt(
-        ctx: &ProgramContext,
-        ovt_amount: u64,
-        btc_address: String,
-    ) -> ProgramResult {
-        let mint_info = ctx.accounts.get::<Mint>(0)?;
-        let metadata_info = ctx.accounts.get::<Account<TokenMetadata>>(1)?;
-        let treasury_info = ctx.accounts.get::<TokenAccount>(2)?;
-        let seller_token_account = ctx.accounts.get::<TokenAccount>(3)?;
-        let seller_info = ctx.accounts.get::<AccountInfo>(4)?;
-        let oracle_info = ctx.accounts.get::<AccountInfo>(5)?;
-
-        // Verify seller signature
-        if !seller_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        // Verify seller has enough tokens
-        let seller_token_data = seller_token_account.get_data()?;
-        if seller_token_data.amount < ovt_amount {
-            return Err(ProgramError::InsufficientFunds);
-        }
-
-        // Get current NAV and calculate price
-        let metadata = metadata_info.get_data::<TokenMetadata>()?;
-        let price_per_token = metadata.nav_sats.checked_div(metadata.total_supply)
-            .ok_or(ProgramError::Arithmetic)?;
-        let total_price = price_per_token.checked_mul(ovt_amount)
-            .ok_or(ProgramError::Arithmetic)?;
-
-        // For testnet: Simulate Bitcoin payment (in production this would initiate a Bitcoin transaction)
-        #[cfg(not(test))]
-        {
-            // TODO: Implement actual Bitcoin payment
-            // For now, we'll just log the payment details
-            msg!("Simulated BTC payment of {} sats to {}", total_price, btc_address);
-        }
-
-        // Burn tokens from seller
-        let mint = Mint::new(
-            mint_info,
-            ctx.program_id,
-            None,
-            6,
-        )?;
-        mint.burn_from(seller_token_account, ovt_amount)?;
-
-        // Update metadata
-        let mut metadata = metadata_info.get_data::<TokenMetadata>()?;
-        metadata.total_supply = metadata.total_supply.checked_sub(ovt_amount)
-            .ok_or(ProgramError::Arithmetic)?;
-        metadata_info.set_data(metadata)?;
-
+        // In production, this would verify the Bitcoin payment and burn tokens
         Ok(())
     }
 }
@@ -381,91 +135,54 @@ impl OVTProgram {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arch_sdk::test_utils::*;
+    use mock_sdk::test_utils::TestClient;
+    use bitcoin::secp256k1::Secp256k1;
+    use rand::thread_rng;
 
     #[test]
-    fn test_initialize() {
-        let mut test_ctx = ProgramTestContext::new();
+    fn test_buyback_burn() {
+        let mut client = TestClient::new();
         
         // Create test accounts
-        let mint = test_ctx.create_mint();
-        let metadata = test_ctx.create_account::<TokenMetadata>();
-        let treasury = test_ctx.create_token_account(&mint.pubkey());
-        let authority = test_ctx.create_account_with_lamports(1000000);
+        let program_id = mock_sdk::Pubkey::new_unique();
+        let authority = mock_sdk::Pubkey::new_unique();
 
-        // Initialize OVT token
-        let initial_supply = 1_000_000;
+        // Initialize state with some NAV and supply
+        let secp = Secp256k1::new();
+        let mut rng = thread_rng();
+        let (_, pubkey) = secp.generate_keypair(&mut rng);
+        
+        let state = OVTState {
+            nav_sats: 1_000_000, // 1M sats NAV
+            treasury_pubkey_bytes: pubkey.serialize(),
+            total_supply: 1_000_000, // 1M OVT supply
+            last_nav_update: 0,
+        };
+
+        // Create and initialize state account
+        let state_account = client.create_account(program_id).unwrap();
+        client.set_account_data(&state_account.key, &state).unwrap();
+
+        // Create authority account since it's required as a signer
+        let _authority_account = client.create_account_with_lamports(1000000).unwrap();
+        client.accounts.insert(authority, mock_sdk::AccountInfo::new(authority, true, false));
+
+        // Test buyback burn
+        let payment_amount = 100_000; // 100k sats
+        let instruction = OVTInstruction::BuybackBurn {
+            payment_txid: "test_txid".to_string(),
+            payment_amount_sats: payment_amount,
+        };
+
         let accounts = vec![
-            AccountMeta::new(mint.pubkey(), false),
-            AccountMeta::new(metadata.pubkey(), false),
-            AccountMeta::new(treasury.pubkey(), false),
-            AccountMeta::new_readonly(authority.pubkey(), true),
+            mock_sdk::program::AccountMeta::new(state_account.key, false),
+            mock_sdk::program::AccountMeta::new_readonly(authority, true),
         ];
 
-        let instruction = OVTInstruction::Initialize { initial_supply };
-        test_ctx.process_instruction(
-            &OVTProgram,
+        client.process_transaction(
+            program_id,
             accounts,
-            &instruction.try_to_vec().unwrap(),
+            borsh::to_vec(&instruction).unwrap(),
         ).unwrap();
-
-        // Verify initialization
-        let metadata_data = test_ctx.get_account_data::<TokenMetadata>(&metadata.pubkey()).unwrap();
-        assert_eq!(metadata_data.total_supply, initial_supply);
-        
-        let treasury_data = test_ctx.get_token_account(&treasury.pubkey()).unwrap();
-        assert_eq!(treasury_data.amount, initial_supply);
-    }
-
-    #[test]
-    fn test_buy_ovt() {
-        let mut test_ctx = ProgramTestContext::new();
-        
-        // Create test accounts
-        let mint = test_ctx.create_mint();
-        let metadata = test_ctx.create_account::<TokenMetadata>();
-        let treasury = test_ctx.create_token_account(&mint.pubkey());
-        let buyer = test_ctx.create_account_with_lamports(1000000);
-        let buyer_token_account = test_ctx.create_token_account(&mint.pubkey());
-        let oracle = test_ctx.create_account::<()>();
-
-        // Initialize with some supply and NAV
-        let initial_supply = 1_000_000;
-        let initial_nav = 10_000_000; // 10M sats
-        let metadata_data = TokenMetadata {
-            total_supply: initial_supply,
-            nav_sats: initial_nav,
-            treasury: treasury.pubkey(),
-        };
-        test_ctx.set_account_data(&metadata.pubkey(), &metadata_data).unwrap();
-
-        // Buy OVT
-        let buy_amount = 1000;
-        let payment_proof = vec![1, 2, 3, 4]; // Simulated payment proof
-        let accounts = vec![
-            AccountMeta::new(mint.pubkey(), false),
-            AccountMeta::new(metadata.pubkey(), false),
-            AccountMeta::new(treasury.pubkey(), false),
-            AccountMeta::new(buyer_token_account.pubkey(), false),
-            AccountMeta::new_readonly(buyer.pubkey(), true),
-            AccountMeta::new_readonly(oracle.pubkey(), false),
-        ];
-
-        let instruction = OVTInstruction::BuyOVT {
-            ovt_amount: buy_amount,
-            payment_proof,
-        };
-        test_ctx.process_instruction(
-            &OVTProgram,
-            accounts,
-            &instruction.try_to_vec().unwrap(),
-        ).unwrap();
-
-        // Verify purchase
-        let buyer_balance = test_ctx.get_token_account(&buyer_token_account.pubkey()).unwrap();
-        assert_eq!(buyer_balance.amount, buy_amount);
-        
-        let metadata_after = test_ctx.get_account_data::<TokenMetadata>(&metadata.pubkey()).unwrap();
-        assert_eq!(metadata_after.total_supply, initial_supply + buy_amount);
     }
 } 
