@@ -92,16 +92,41 @@ impl OVTProgram {
     }
 
     fn process_update_nav(ctx: &ProgramContext, btc_price_sats: u64) -> ProgramResult {
+        println!("Entering process_update_nav with btc_price_sats={}", btc_price_sats);
+        
         let state_info = ctx.get(0)?;
         let authority_info = ctx.get(1)?;
 
+        println!("State account: {:?}, is_writable={}", state_info.key, state_info.is_writable);
+        println!("Authority account: {:?}, is_signer={}", authority_info.key, authority_info.is_signer);
+
         if !authority_info.is_signer {
+            println!("Authority is not a signer!");
             return Err(ProgramError::MissingRequiredSignature);
         }
 
         let mut state: OVTState = state_info.get_data()?;
+        println!("Current state: nav_sats={}, total_supply={}", state.nav_sats, state.total_supply);
+        
+        // In production, we would:
+        // 1. Fetch prices of all assets in treasury from oracles
+        // 2. Calculate total value of liquid assets (tokens)
+        // 3. Add value of illiquid assets (SAFEs) based on last known valuations
+        // 4. Divide by total supply to get NAV per token
+        
+        // For testnet MVP, we'll use the btc_price_sats directly as NAV
+        // In production, this would be replaced with real calculations
         state.nav_sats = btc_price_sats;
-        state_info.set_data(&state)?;
+        println!("Updated state: nav_sats={}, total_supply={}", state.nav_sats, state.total_supply);
+        
+        // Update last NAV update timestamp
+        // In production this would be real timestamp
+        state.last_nav_update = 1000; // Mock timestamp for testing
+        
+        match state_info.set_data(&state) {
+            Ok(_) => println!("Successfully updated state data"),
+            Err(e) => println!("Failed to update state data: {:?}", e),
+        }
 
         Ok(())
     }

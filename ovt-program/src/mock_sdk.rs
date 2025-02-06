@@ -372,29 +372,52 @@ pub mod test_utils {
             program_id: Pubkey,
             accounts: Vec<AccountMeta>,
             instruction_data: Vec<u8>,
-        ) -> Result<(), ProgramError> {
-            let program_context = ProgramContext {
-                program_id,
-                accounts: accounts.iter().map(|meta| {
+        ) -> ProgramResult {
+            println!("Processing transaction with {} accounts", accounts.len());
+            
+            let mut account_infos: Vec<AccountInfo> = accounts
+                .iter()
+                .map(|meta| {
                     match self.accounts.get(&meta.pubkey) {
-                        Some(account) => AccountInfo {
-                            key: account.key,
-                            is_signer: meta.is_signer,
-                            is_writable: meta.is_writable,
-                            lamports: account.lamports.clone(),
-                            data: account.data.clone(),
-                            owner: account.owner,
-                        },
+                        Some(account) => {
+                            println!("Found account {:?}, is_writable={}, is_signer={}", 
+                                meta.pubkey, meta.is_writable, meta.is_signer);
+                            let mut account = account.clone();
+                            account.is_signer = meta.is_signer;
+                            account.is_writable = meta.is_writable;
+                            account
+                        }
                         None => {
                             println!("Account not found: {:?}", meta.pubkey);
                             println!("Available accounts: {:?}", self.accounts.keys().collect::<Vec<_>>());
                             panic!("Account not found");
                         }
                     }
-                }).collect(),
+                })
+                .collect();
+
+            let program_context = ProgramContext {
+                program_id,
+                accounts: account_infos,
             };
 
-            crate::OVTProgram::process_instruction(&program_context, &instruction_data)
+            // Process the instruction using the program's implementation
+            let result = crate::OVTProgram::process_instruction(&program_context, &instruction_data);
+            if let Err(ref e) = result {
+                println!("Instruction processing failed: {:?}", e);
+            } else {
+                println!("Instruction processing succeeded");
+            }
+
+            // Update accounts in the map after processing
+            for account in program_context.accounts.iter() {
+                if account.is_writable {
+                    println!("Updating account {:?} in map", account.key);
+                    self.accounts.insert(account.key, account.clone());
+                }
+            }
+
+            result
         }
 
         pub fn get_account_data<T: BorshDeserialize>(&self, pubkey: &Pubkey) -> Result<T, ProgramError> {
