@@ -1,7 +1,21 @@
+pub mod error;
 pub mod mock_sdk;
-use mock_sdk::program::{Program, ProgramContext, ProgramResult, ProgramError};
+pub mod system;
+pub mod utxo;
+
+use arch_program::{
+    entrypoint,
+    program::{Program, ProgramContext, ProgramResult},
+    account_info::AccountInfo,
+    pubkey::Pubkey,
+};
 use borsh::{BorshDeserialize, BorshSerialize};
 use bitcoin::PublicKey;
+use crate::{
+    error::OVTError,
+    system::{create_program_account, initialize_account},
+    utxo::{verify_bitcoin_payment, verify_utxo_ownership},
+};
 
 /// OVT Token identifier in Runes protocol
 pub const OVT_RUNE_SYMBOL: &str = "OVT";
@@ -31,7 +45,7 @@ impl OVTState {
 
     pub fn get_treasury_pubkey(&self) -> Result<PublicKey, ProgramError> {
         PublicKey::from_slice(&self.treasury_pubkey_bytes)
-            .map_err(|_| ProgramError::InvalidAccountData)
+            .map_err(|_| OVTError::InvalidTreasuryKey.into())
     }
 }
 
@@ -51,6 +65,8 @@ pub enum OVTInstruction {
         payment_amount_sats: u64,
     },
 }
+
+entrypoint!(process_instruction);
 
 impl Program for OVTProgram {
     fn process_instruction(ctx: &ProgramContext, data: &[u8]) -> ProgramResult {
@@ -74,10 +90,20 @@ impl OVTProgram {
     fn process_initialize(ctx: &ProgramContext, treasury_pubkey_bytes: [u8; 33]) -> ProgramResult {
         let state_info = ctx.get(0)?;
         let authority_info = ctx.get(1)?;
+        let system_program = ctx.get(2)?;
 
         if !authority_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
         }
+
+        // Create and initialize state account
+        create_program_account(
+            &ctx.program_id,
+            state_info,
+            authority_info,
+            std::mem::size_of::<OVTState>() as u64,
+            system_program,
+        )?;
 
         // Initialize new state
         let state = OVTState {
@@ -87,53 +113,34 @@ impl OVTProgram {
             last_nav_update: 0,
         };
 
-        state_info.set_data(&state)?;
+        initialize_account(&ctx.program_id, state_info, &state)?;
         Ok(())
     }
 
     fn process_update_nav(ctx: &ProgramContext, btc_price_sats: u64) -> ProgramResult {
-        println!("Entering process_update_nav with btc_price_sats={}", btc_price_sats);
-        
         let state_info = ctx.get(0)?;
         let authority_info = ctx.get(1)?;
 
-        println!("State account: {:?}, is_writable={}", state_info.key, state_info.is_writable);
-        println!("Authority account: {:?}, is_signer={}", authority_info.key, authority_info.is_signer);
-
         if !authority_info.is_signer {
-            println!("Authority is not a signer!");
             return Err(ProgramError::MissingRequiredSignature);
         }
 
         let mut state: OVTState = state_info.get_data()?;
-        println!("Current state: nav_sats={}, total_supply={}", state.nav_sats, state.total_supply);
-        
-        // In production, we would:
-        // 1. Fetch prices of all assets in treasury from oracles
-        // 2. Calculate total value of liquid assets (tokens)
-        // 3. Add value of illiquid assets (SAFEs) based on last known valuations
-        // 4. Divide by total supply to get NAV per token
-        
-        // For testnet MVP, we'll use the btc_price_sats directly as NAV
-        // In production, this would be replaced with real calculations
         state.nav_sats = btc_price_sats;
-        println!("Updated state: nav_sats={}, total_supply={}", state.nav_sats, state.total_supply);
-        
-        // Update last NAV update timestamp
-        // In production this would be real timestamp
         state.last_nav_update = 1000; // Mock timestamp for testing
-        
-        match state_info.set_data(&state) {
-            Ok(_) => println!("Successfully updated state data"),
-            Err(e) => println!("Failed to update state data: {:?}", e),
-        }
 
+        state_info.set_data(&state)?;
         Ok(())
     }
 
-    fn process_buyback_burn(ctx: &ProgramContext, payment_txid: &str, payment_amount_sats: u64) -> ProgramResult {
+    fn process_buyback_burn(
+        ctx: &ProgramContext,
+        payment_txid: &str,
+        payment_amount_sats: u64,
+    ) -> ProgramResult {
         let state_info = ctx.get(0)?;
         let authority_info = ctx.get(1)?;
+        let utxo_info = ctx.get(2)?;
 
         if !authority_info.is_signer {
             return Err(ProgramError::MissingRequiredSignature);
@@ -141,18 +148,28 @@ impl OVTProgram {
 
         let state: OVTState = state_info.get_data()?;
         
+        // Verify UTXO ownership and payment
+        verify_utxo_ownership(utxo_info, &ctx.program_id)?;
+        verify_bitcoin_payment(utxo_info, payment_amount_sats, &state.treasury_pubkey_bytes)?;
+        
         // Calculate OVT amount to burn based on current NAV
-        let _ovt_to_burn = if state.nav_sats > 0 {
+        let ovt_to_burn = if state.nav_sats > 0 {
             (payment_amount_sats as u128)
                 .checked_mul(state.total_supply as u128)
                 .and_then(|product| product.checked_div(state.nav_sats as u128))
                 .and_then(|result| if result <= u64::MAX as u128 { Some(result as u64) } else { None })
-                .ok_or(ProgramError::Arithmetic)?
+                .ok_or(OVTError::InvalidSupplyChange)?
         } else {
-            return Err(ProgramError::InvalidArgument);
+            return Err(OVTError::InvalidNAVUpdate.into());
         };
 
-        // In production, this would verify the Bitcoin payment and burn tokens
+        // Update state with new supply
+        let mut new_state = state;
+        new_state.total_supply = new_state.total_supply
+            .checked_sub(ovt_to_burn)
+            .ok_or(OVTError::InvalidSupplyChange)?;
+
+        state_info.set_data(&new_state)?;
         Ok(())
     }
 }

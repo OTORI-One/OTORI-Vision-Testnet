@@ -7,7 +7,38 @@ interface PriceData {
 
 interface PriceChartProps {
   data: PriceData[];
+  baseCurrency?: 'usd' | 'btc';
 }
+
+const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd') => {
+  if (currency === 'usd') {
+    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
+    if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
+    return `$${value.toFixed(2)}`;
+  } else {
+    const btcPrice = 40000; // TODO: Get real BTC price
+    const sats = Math.floor((value / btcPrice) * 100000000);
+    if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
+    if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
+    if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
+    return `${sats} sats`;
+  }
+};
+
+const CustomTooltip = ({ active, payload, label, currency }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
+        <p className="text-sm text-gray-600">{data.name}</p>
+        <p className="text-lg font-semibold mt-1">
+          {formatCurrencyValue(data.value, currency)}
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
 
 const mockData = [
   { name: 'Q1 \'26', value: 200 },
@@ -16,7 +47,15 @@ const mockData = [
   { name: 'Q4 \'26', value: 280 },
 ];
 
-export default function PriceChart({ data = mockData }: PriceChartProps) {
+export default function PriceChart({ data = mockData, baseCurrency = 'usd' }: PriceChartProps) {
+  const formatYAxis = (value: number) => {
+    return formatCurrencyValue(value, baseCurrency);
+  };
+
+  // Calculate the maximum value for proper Y-axis scaling
+  const maxValue = Math.max(...data.map(item => item.value));
+  const yAxisDomain = [0, Math.ceil(maxValue * 1.1)]; // Add 10% padding to the top
+
   return (
     <div className="bg-white p-6 rounded-lg shadow">
       <div className="flex justify-between items-center mb-4">
@@ -24,11 +63,31 @@ export default function PriceChart({ data = mockData }: PriceChartProps) {
       </div>
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
-            <Tooltip />
+          <LineChart 
+            data={data}
+            margin={{
+              top: 20,
+              right: 30,
+              left: 30,
+              bottom: 10,
+            }}
+          >
+            <CartesianGrid 
+              strokeDasharray="3 3" 
+              horizontal={true}
+              vertical={false}
+              horizontalPoints={Array.from({ length: 5 }, (_, i) => (maxValue * 1.1 * (i + 1)) / 6)}
+            />
+            <XAxis 
+              dataKey="name"
+              padding={{ left: 20, right: 20 }}
+            />
+            <YAxis 
+              tickFormatter={formatYAxis}
+              domain={yAxisDomain}
+              padding={{ top: 20 }}
+            />
+            <Tooltip content={(props) => <CustomTooltip {...props} currency={baseCurrency} />} />
             <Line
               type="monotone"
               dataKey="value"

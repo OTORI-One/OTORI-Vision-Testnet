@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@headlessui/react": "^2.2.0",
     "@heroicons/react": "^2.1.1",
     "@omnisat/lasereyes": "^0.0.138",
     "autoprefixer": "^10.4.17",

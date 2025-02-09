@@ -1,5 +1,5 @@
 use thiserror::Error;
-use arch_sdk::program::ProgramError;
+use arch_program::program_error::ProgramError;
 
 #[derive(Error, Debug)]
 pub enum OVTError {
@@ -38,10 +38,18 @@ pub enum OVTError {
 
     #[error("Program error: {0}")]
     ProgramError(#[from] ProgramError),
+
+    InvalidBitcoinPayment,
+    InvalidNAVUpdate,
+    InsufficientFunds,
+    InvalidTreasuryKey,
+    InvalidSupplyChange,
+    InvalidTimestamp,
+    UTXOVerificationFailed,
 }
 
 impl From<OVTError> for ProgramError {
     fn from(e: OVTError) -> Self {
-        ProgramError::Custom(e.to_string())
+        ProgramError::Custom(format!("{:?}", e))
     }
 } 

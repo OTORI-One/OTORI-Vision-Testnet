@@ -13,9 +13,11 @@ A Next.js application for managing and tracking the OTORI Vision Token (OVT), a 
 
 - Node.js 16.x or later
 - npm 7.x or later
-- A Bitcoin wallet (e.g., Xverse)
+- A Bitcoin wallet (e.g., Xverse, Unisat, or Leather)
 - Rust and Cargo
 - PowerShell
+- Access to Bitcoin network (testnet for development)
+- Arch Network CLI tools
 
 ## Getting Started
 
@@ -32,12 +34,19 @@ cd ovt-fund
 npm install
 ```
 
-3. Run the development server:
+3. Configure environment:
+   - Copy `.env.local.example` to `.env.local`
+   - Update the following values:
+     - `NEXT_PUBLIC_PROGRAM_ID`: Obtained after deploying your program to Arch Network
+     - `NEXT_PUBLIC_TREASURY_ADDRESS`: Your Bitcoin treasury address (where funds will be managed)
+     - `NEXT_PUBLIC_ARCH_ENDPOINT`: Your Arch Network node endpoint (use localhost:8000 for development)
+
+4. Run the development server:
 ```powershell
 npm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Rust Setup (for OVT Program)
 
@@ -54,12 +63,74 @@ rustc --version
 cargo --version
 ```
 
-3. Install Arch Network's local validator:
+3. Clone and build Arch Network tools:
 ```powershell
-cargo install arch-local-validator
+# Clone the required repositories
+git clone https://github.com/Arch-Network/arch-cli.git
+git clone https://github.com/Arch-Network/arch-node.git
+
+# Build arch-cli
+cd arch-cli
+cargo build --release
+cd ..
+
+# Build local validator from arch-node
+cd arch-node
+cargo build --release
+cd ..
+
+# Add the binary directories to your PATH
+$env:PATH += ";$PWD/arch-cli/target/release;$PWD/arch-node/target/release"
 ```
 
-### Local Testing
+4. Verify installation:
+```powershell
+arch-cli --version
+arch-local-validator --version
+```
+
+### Backend Setup
+
+#### Development Environment
+1. Start the local Arch Network validator:
+```powershell
+# Make sure you're in the arch-node directory
+cd arch-node
+cargo run --bin arch-local-validator
+```
+
+2. Deploy the OVT program locally:
+```powershell
+cd ovt-program
+arch-cli program deploy --local
+# Note the program ID output - you'll need this for .env.local
+```
+
+3. Generate a test treasury address:
+```powershell
+arch-cli address generate --network testnet
+# Use this address as your NEXT_PUBLIC_TREASURY_ADDRESS in .env.local
+```
+
+#### Production Environment
+1. Deploy to Arch Network testnet:
+```powershell
+arch-cli program deploy --network testnet
+# Note the program ID - update this in your production .env
+```
+
+2. Set up a secure Bitcoin treasury address:
+   - Generate using a hardware wallet
+   - Ensure proper key management and backup
+   - Consider multi-sig setup for additional security
+
+3. Run an Arch Network node:
+   - Set up a dedicated server
+   - Install Arch Network node software
+   - Configure Bitcoin node connection
+   - Set up monitoring and maintenance
+
+### Testing
 
 1. Run the OVT program tests:
 ```powershell
@@ -67,7 +138,7 @@ cd ovt-program
 cargo test -- --nocapture
 ```
 
-2. Run specific test:
+2. Test specific flows:
 ```powershell
 cargo test test_full_flow -- --nocapture
 ```
@@ -79,30 +150,44 @@ ovt-fund/
 ├── components/          # Reusable React components
 ├── pages/              # Next.js pages
 ├── public/             # Static assets
-├── src/                # Source files
-│   └── hooks/          # Custom React hooks
+├── src/
+│   ├── hooks/          # Custom React hooks
+│   └── lib/            # Utility functions and clients
 ├── styles/             # CSS styles
 └── types/              # TypeScript type definitions
+
+ovt-program/
+├── src/
+│   ├── lib.rs          # Main program logic
+│   ├── client.rs       # Arch Network program client
+│   └── runes_client.rs # Bitcoin Runes protocol client
+└── tests/              # Integration tests
 ```
 
-## Development
+## Development Workflow
 
-### Available Scripts
+1. Start with local development:
+   - Run local Arch validator
+   - Deploy program locally
+   - Test with mock Bitcoin transactions
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm start` - Start production server
-- `npm run lint` - Run ESLint
+2. Move to testnet:
+   - Deploy to Arch testnet
+   - Test with real Bitcoin testnet transactions
+   - Verify all flows with test funds
 
-### Technology Stack
+3. Production deployment:
+   - Deploy to Arch mainnet
+   - Configure secure treasury management
+   - Enable real Bitcoin transactions
 
-- Next.js - React framework
-- TypeScript - Type safety
-- Tailwind CSS - Styling
-- Recharts - Data visualization
-- Bitcoin wallet integration
-- Rust - Smart contract development
-- Arch Network - Bitcoin L2 platform
+## Security Considerations
+
+- Always test thoroughly on testnet first
+- Use hardware wallets for treasury management
+- Implement proper monitoring and alerts
+- Regular security audits
+- Backup and recovery procedures
 
 ## Contributing
 
