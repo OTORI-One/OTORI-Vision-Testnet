@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  frontend-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        cache-dependency-path: ovt-fund/package-lock.json
+    
+    - name: Install Dependencies
+      working-directory: ovt-fund
+      run: npm ci
+    
+    - name: Lint
+      working-directory: ovt-fund
+      run: npm run lint
+    
+    - name: Type Check
+      working-directory: ovt-fund
+      run: npx tsc --noEmit
+    
+    - name: Build
+      working-directory: ovt-fund
+      run: npm run build
+
+  rust-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        working-directory: ovt-program
+    
+    - name: Check formatting
+      working-directory: ovt-program
+      run: cargo fmt -- --check
+    
+    - name: Clippy
+      working-directory: ovt-program
+      run: cargo clippy -- -D warnings
+    
+    - name: Run tests
+      working-directory: ovt-program
+      run: cargo test 

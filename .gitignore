@@ -53,6 +53,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Internal Files
+.Figma
+/docs/
+/prompt_docs/
+
 # Cache
 .cache/
 .npm/
