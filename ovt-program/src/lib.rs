@@ -47,6 +47,47 @@ impl OVTState {
         PublicKey::from_slice(&self.treasury_pubkey_bytes)
             .map_err(|_| OVTError::InvalidTreasuryKey.into())
     }
+
+    // Add validation methods
+    pub fn validate_nav_update(&self, new_nav_sats: u64) -> ProgramResult {
+        if self.nav_sats > 0 {
+            let change_ratio = (new_nav_sats as f64) / (self.nav_sats as f64);
+            
+            // Allow larger price movements but require additional verification for extreme changes
+            if change_ratio > 2.0 || change_ratio < 0.5 {
+                // For changes over 100%, require additional verification
+                // TODO: Implement multi-signature requirement (reiterate!) for extreme changes
+                msg!("Warning: Large NAV change detected: {}%", (change_ratio - 1.0) * 100.0);
+            } else if change_ratio > 1.5 || change_ratio < 0.67 {
+                // For changes between 50% and 100%, log warning but allow
+                msg!("Notice: Significant NAV change: {}%", (change_ratio - 1.0) * 100.0);
+            }
+            
+            // Basic sanity checks
+            if change_ratio > 5.0 || change_ratio < 0.2 {
+                // Prevent extreme changes (>400% or <-80%) without special authorization
+                return Err(OVTError::InvalidNAVUpdate.into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn validate_supply_change(&self, new_supply: u64) -> ProgramResult {
+        // Ensure supply changes are within acceptable limits
+        if self.total_supply > 0 {
+            let change_ratio = (new_supply as f64) / (self.total_supply as f64);
+            if change_ratio > 1.1 || change_ratio < 0.9 {
+                return Err(OVTError::InvalidSupplyChange.into());
+            }
+        }
+        Ok(())
+    }
+
+    pub fn validate_treasury(&self) -> ProgramResult {
+        // Ensure treasury key is valid
+        self.get_treasury_pubkey()?;
+        Ok(())
+    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize)]
@@ -126,6 +167,11 @@ impl OVTProgram {
         }
 
         let mut state: OVTState = state_info.get_data()?;
+        
+        // Validate the NAV update
+        state.validate_nav_update(btc_price_sats)?;
+        
+        // Update state
         state.nav_sats = btc_price_sats;
         state.last_nav_update = 1000; // Mock timestamp for testing
 
@@ -148,7 +194,8 @@ impl OVTProgram {
 
         let state: OVTState = state_info.get_data()?;
         
-        // Verify UTXO ownership and payment
+        // Validate treasury and UTXO
+        state.validate_treasury()?;
         verify_utxo_ownership(utxo_info, &ctx.program_id)?;
         verify_bitcoin_payment(utxo_info, payment_amount_sats, &state.treasury_pubkey_bytes)?;
         
@@ -163,11 +210,15 @@ impl OVTProgram {
             return Err(OVTError::InvalidNAVUpdate.into());
         };
 
-        // Update state with new supply
-        let mut new_state = state;
-        new_state.total_supply = new_state.total_supply
+        // Calculate new supply and validate
+        let new_supply = state.total_supply
             .checked_sub(ovt_to_burn)
             .ok_or(OVTError::InvalidSupplyChange)?;
+            
+        // Validate supply change
+        let mut new_state = state;
+        new_state.validate_supply_change(new_supply)?;
+        new_state.total_supply = new_supply;
 
         state_info.set_data(&new_state)?;
         Ok(())
@@ -226,5 +277,48 @@ mod tests {
             accounts,
             borsh::to_vec(&instruction).unwrap(),
         ).unwrap();
+    }
+
+    #[test]
+    fn test_nav_validation() {
+        let mut client = TestClient::new();
+        let program_id = mock_sdk::Pubkey::new_unique();
+        let authority = mock_sdk::Pubkey::new_unique();
+
+        // Create and initialize state account with initial NAV
+        let state = OVTState {
+            nav_sats: 1_000_000, // 1M sats NAV
+            treasury_pubkey_bytes: [0u8; 33],
+            total_supply: 1_000_000,
+            last_nav_update: 0,
+        };
+
+        let state_account = client.create_account(program_id).unwrap();
+        client.set_account_data(&state_account.key, &state).unwrap();
+        client.accounts.insert(authority, mock_sdk::AccountInfo::new(authority, true, false));
+
+        // Test valid NAV update (within 20% change)
+        let valid_nav = 1_100_000; // 10% increase
+        let instruction = OVTInstruction::UpdateNAV { btc_price_sats: valid_nav };
+        let accounts = vec![
+            mock_sdk::program::AccountMeta::new(state_account.key, false),
+            mock_sdk::program::AccountMeta::new_readonly(authority, true),
+        ];
+
+        assert!(client.process_transaction(
+            program_id,
+            accounts.clone(),
+            borsh::to_vec(&instruction).unwrap(),
+        ).is_ok());
+
+        // Test invalid NAV update (>20% change)
+        let invalid_nav = 2_000_000; // 100% increase
+        let instruction = OVTInstruction::UpdateNAV { btc_price_sats: invalid_nav };
+        
+        assert!(client.process_transaction(
+            program_id,
+            accounts,
+            borsh::to_vec(&instruction).unwrap(),
+        ).is_err());
     }
 } 

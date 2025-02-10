@@ -1,0 +1,444 @@
+# OTORI Vision Token (OVT) Development Rules for AI Assistance
+
+## 1. General Development Principles
+
+### 1.1. Code Structure & Architecture
+- Follow hybrid architecture pattern (off-chain computation, on-chain execution)
+- Maintain clear separation between mock and production implementations
+- Use TypeScript for frontend and Rust for smart contracts
+- Implement proper error boundaries and logging
+
+### 1.2. Security & Compliance
+- Never expose sensitive data or API keys in code
+- Implement proper validation for all inputs
+- Follow Bitcoin-grade security practices for critical operations
+- Ensure auditability of all portfolio operations
+
+### 1.3. Documentation & Comments
+- Maintain comprehensive JSDoc/RustDoc comments
+- Document all AI integration points
+- Keep DEV_JOURNAL.md updated with significant changes
+- Include rationale for architectural decisions
+
+## 2. Frontend Development (Next.js)
+
+### 2.1. Component Architecture
+- Use functional components with hooks
+- Implement proper error boundaries
+- Follow atomic design principles
+- Maintain clear separation between mock and real data implementations
+
+### 2.2. State Management
+```typescript
+// Example state management pattern for OVT using Arch Network
+interface OVTState {
+  // NAV and Treasury state
+  nav: {
+    totalValueSats: bigint;
+    lastUpdateTimestamp: number;
+    portfolioItems: Array<{
+      name: string;
+      valueSats: bigint;
+      currentValueSats: bigint;
+      changePercentage: number;
+    }>;
+  };
+  
+  // Wallet and transaction state
+  wallet: {
+    connected: boolean;
+    address: string | null;
+    transactions: Array<{
+      txid: string;
+      type: 'buy' | 'sell';
+      amountSats: bigint;
+      timestamp: number;
+    }>;
+  };
+  
+  // Program state
+  program: {
+    isInitialized: boolean;
+    treasuryPubkey: string | null;
+    totalSupply: bigint;
+  };
+  
+  // UI state
+  ui: {
+    isLoading: boolean;
+    error: Error | null;
+    activeView: 'nav' | 'price';
+    mockMode: boolean;
+  };
+}
+
+// Example state hook implementation
+const useOVTState = () => {
+  const [state, setState] = useState<OVTState>({
+    nav: {
+      totalValueSats: BigInt(0),
+      lastUpdateTimestamp: 0,
+      portfolioItems: []
+    },
+    wallet: {
+      connected: false,
+      address: null,
+      transactions: []
+    },
+    program: {
+      isInitialized: false,
+      treasuryPubkey: null,
+      totalSupply: BigInt(0)
+    },
+    ui: {
+      isLoading: false,
+      error: null,
+      activeView: 'nav',
+      mockMode: process.env.NEXT_PUBLIC_MOCK_MODE === 'true'
+    }
+  });
+
+  // State update functions
+  const updateNAV = useCallback((newNAV: typeof state.nav) => {
+    setState(prev => ({ ...prev, nav: newNAV }));
+  }, []);
+
+  const updateWallet = useCallback((newWallet: Partial<typeof state.wallet>) => {
+    setState(prev => ({ 
+      ...prev, 
+      wallet: { ...prev.wallet, ...newWallet }
+    }));
+  }, []);
+
+  return { state, updateNAV, updateWallet };
+};
+```
+
+### 2.3. Data Handling
+- Implement proper loading states
+- Handle error cases gracefully
+- Use TypeScript interfaces for all data structures
+- Document mock data patterns
+
+### 2.4. UI/UX Standards
+- Follow Tailwind CSS best practices
+- Ensure responsive design
+- Implement proper loading states
+- Use consistent error handling patterns
+
+## 3. Smart Contract Development (Rust)
+
+### 3.1. Program Structure
+```rust
+// OVT Program Structure following Arch Network patterns
+pub mod error;
+pub mod state;
+pub mod instructions;
+pub mod utils;
+pub mod validation;
+pub mod bitcoin;
+
+use {
+    crate::{
+        error::OVTError,
+        state::{OVTState, PortfolioItem},
+        validation::verify_bitcoin_payment,
+    },
+    arch_program::{
+        account_info::AccountInfo,
+        entrypoint,
+        program_error::ProgramError,
+        pubkey::Pubkey,
+        system_instruction,
+        utxo::UtxoMeta,
+    },
+    borsh::{BorshDeserialize, BorshSerialize},
+};
+
+// Constants for OVT program
+pub const OVT_SEED_PREFIX: &[u8] = b"ovt";
+pub const TREASURY_SEED: &[u8] = b"treasury";
+pub const NAV_SEED: &[u8] = b"nav";
+
+// Program entry point
+entrypoint!(process_instruction);
+
+// Main program structure
+pub struct OVTProgram;
+
+impl OVTProgram {
+    pub fn process_instruction(
+        program_id: &Pubkey,
+        accounts: &[AccountInfo],
+        instruction_data: &[u8]
+    ) -> ProgramResult {
+        // Process instructions using Arch Network patterns
+        let instruction = OVTInstruction::try_from_slice(instruction_data)?;
+        
+        match instruction {
+            OVTInstruction::Initialize { treasury_pubkey } => {
+                Self::process_initialize(program_id, accounts, treasury_pubkey)
+            },
+            OVTInstruction::UpdateNAV { nav_data } => {
+                Self::process_update_nav(accounts, nav_data)
+            },
+            // Additional instructions...
+        }
+    }
+}
+```
+
+### 3.2. Error Handling
+- Use custom error types
+- Implement proper error propagation
+- Document error conditions
+- Include error recovery strategies
+
+### 3.3. Testing
+- Write comprehensive unit tests
+- Implement integration tests
+- Use proper test fixtures
+- Document test scenarios
+
+## 4. AI Integration Points
+
+### 4.1. Off-Chain Components
+- Document AI model interfaces
+- Implement proper data validation
+- Handle model versioning
+- Log inference decisions
+
+### 4.2. Data Processing
+```typescript
+// Data processing patterns for OVT on Arch Network
+
+// Input interfaces for AI model
+interface AIModelInput {
+  // Market data from oracles
+  marketData: {
+    btcPrice: bigint;
+    timestamp: number;
+    volatility: number;
+    marketTrends: Array<{
+      asset: string;
+      trend: number;
+      confidence: number;
+    }>;
+  };
+  
+  // Current portfolio state
+  portfolioState: {
+    navSats: bigint;
+    holdings: Array<{
+      asset: string;
+      amountSats: bigint;
+      lastValuation: bigint;
+      riskScore: number;
+    }>;
+    treasuryBalance: bigint;
+  };
+  
+  // Portfolio constraints from Arch program
+  constraints: {
+    maxAllocationPerAsset: number;
+    minLiquidity: bigint;
+    riskTolerance: number;
+    rebalanceThreshold: number;
+  };
+}
+
+// Output interface with verification proofs
+interface AIModelOutput {
+  // Rebalancing decisions with proofs
+  rebalanceDecisions: Array<{
+    asset: string;
+    currentAllocation: number;
+    targetAllocation: number;
+    action: 'buy' | 'sell' | 'hold';
+    amountSats: bigint;
+    reasoning: string;
+  }>;
+  
+  // Confidence metrics
+  confidenceScores: {
+    overall: number;
+    perAsset: Record<string, number>;
+    marketConditions: number;
+  };
+  
+  // Verification data for on-chain validation
+  verification: {
+    proof: string;  // zk-SNARK proof
+    publicInputs: string[];
+    timestamp: number;
+    signature: string;
+  };
+}
+
+// Data transformation for Arch Network
+interface ArchNetworkTransaction {
+  instruction: 'UpdateNAV' | 'Rebalance' | 'BuybackBurn';
+  data: {
+    navSats: bigint;
+    portfolioUpdates: Array<{
+      asset: string;
+      newAmount: bigint;
+      proofData: string;
+    }>;
+    timestamp: number;
+  };
+  verification: {
+    bitcoinTxid?: string;
+    proof: string;
+    signature: string;
+  };
+}
+
+// Example processing function
+async function processPortfolioUpdate(
+  input: AIModelInput,
+  currentState: OVTState
+): Promise<ArchNetworkTransaction> {
+  // 1. Get AI model decision
+  const aiDecision = await getAIDecision(input);
+  
+  // 2. Verify decision meets constraints
+  verifyConstraints(aiDecision, input.constraints);
+  
+  // 3. Generate proof for on-chain verification
+  const proof = await generateProof(aiDecision, currentState);
+  
+  // 4. Format for Arch Network transaction
+  return {
+    instruction: 'UpdateNAV',
+    data: {
+      navSats: calculateNewNAV(aiDecision),
+      portfolioUpdates: formatUpdates(aiDecision),
+      timestamp: Date.now(),
+    },
+    verification: {
+      proof: proof.proofData,
+      signature: proof.signature,
+    },
+  };
+}
+```
+
+### 4.3. Integration Patterns
+- Use proper type definitions
+- Implement verification mechanisms
+- Document data flow
+- Handle edge cases
+
+## 5. Mock Mode Development
+
+### 5.1. Mock Data Structure
+```typescript
+// Example mock data pattern
+const mockPortfolioData = {
+  navData: {
+    totalValue: '1.815M',
+    changePercentage: '+302%',
+    portfolioItems: [
+      {
+        name: 'Polymorphic Labs',
+        value: 200000,
+        current: 1040000,
+        change: 420,
+        description: 'Encryption Layer'
+      }
+      // ... other items
+    ]
+  }
+};
+```
+
+### 5.2. Mock-to-Real Transition
+- Document mock data patterns
+- Implement feature flags
+- Maintain parallel implementations
+- Plan migration strategy
+
+## 6. Testing & Quality Assurance
+
+### 6.1. Test Coverage
+- Implement unit tests for all components
+- Write integration tests
+- Document test scenarios
+- Use proper test utilities
+
+### 6.2. Performance Testing
+- Monitor render performance
+- Test data loading patterns
+- Verify AI inference speed
+- Document benchmarks
+
+## 7. Deployment & DevOps
+
+### 7.1. Environment Configuration
+```env
+# Required environment variables
+NEXT_PUBLIC_PROGRAM_ID=
+NEXT_PUBLIC_TREASURY_ADDRESS=
+NEXT_PUBLIC_ARCH_ENDPOINT=
+NEXT_PUBLIC_MOCK_MODE=
+NODE_ENV=
+```
+
+### 7.2. Build Process
+- Document build steps
+- Maintain deployment scripts
+- Include environment checks
+- Verify dependencies
+
+## 8. Contributing Guidelines
+
+### 8.1. Code Review Process
+- Follow PR template
+- Include test coverage
+- Document changes
+- Update DEV_JOURNAL.md
+
+### 8.2. Documentation Updates
+- Maintain inline documentation
+- Update README files
+- Document architectural decisions
+- Keep setup instructions current
+
+## 9. AI Assistant Instructions
+
+### 9.1. Code Generation
+- Follow project structure
+- Include proper error handling
+- Add comprehensive comments
+- Maintain type safety
+
+### 9.2. Problem Solving
+- Consider hybrid architecture
+- Document reasoning
+- Include error cases
+- Provide migration paths
+
+### 9.3. Documentation
+- Keep documentation current
+- Include examples
+- Document edge cases
+- Maintain consistency
+
+## 10. Version Control
+
+### 10.1. Commit Messages
+```
+type(scope): description
+
+- Detailed explanation
+- Migration notes
+- Breaking changes
+```
+
+### 10.2. Branch Strategy
+- Use feature branches
+- Include proper testing
+- Document migrations
+- Update documentation
+``` 

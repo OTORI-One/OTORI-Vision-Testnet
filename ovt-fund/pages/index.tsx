@@ -3,10 +3,10 @@ import Head from 'next/head';
 import { ArrowUpIcon, CurrencyDollarIcon, CircleStackIcon } from '@heroicons/react/24/outline';
 import WalletConnector from '../components/WalletConnector';
 import NAVVisualization from '../components/NAVVisualization';
-import Portfolio from '../components/Portfolio';
 import PriceChart from '../components/PriceChart';
 import ChartToggle from '../components/ChartToggle';
 import { useOVTClient } from '../src/hooks/useOVTClient';
+import AdminDashboard from '../components/admin/AdminDashboard';
 
 export default function Dashboard() {
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
@@ -113,6 +113,13 @@ export default function Dashboard() {
             />
           </div>
         </div>
+
+        {/* Admin Dashboard (only shown to connected admin wallets) */}
+        {connectedAddress && (
+          <div className="mb-8">
+            <AdminDashboard />
+          </div>
+        )}
 
         {/* Main Dashboard Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">

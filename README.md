@@ -165,6 +165,49 @@ arch-cli address generate --network testnet
 # Use this address as your NEXT_PUBLIC_TREASURY_ADDRESS in .env.local
 ```
 
+### Testing Multisig Setup
+
+#### Local Testing Environment
+1. Set up test admin keys:
+```powershell
+# Create a directory for test keys
+mkdir test-keys
+cd test-keys
+
+# Generate 5 test key pairs
+for ($i = 1; $i -le 5; $i++) {
+    arch-cli address generate --network testnet > "admin_key_$i.json"
+}
+```
+
+2. Run the multisig tests:
+```powershell
+cd ovt-program
+cargo test test_multisig -- --nocapture
+```
+
+The test suite includes:
+- Basic multisig flow testing
+- Real signature generation and verification
+- Error case testing (insufficient signatures, invalid keys)
+- Portfolio position management with multisig
+
+#### Test Scenarios Covered
+1. Token Minting with 3-of-5 Multisig
+   - Successful minting with 3 valid signatures
+   - Failed attempt with insufficient signatures
+   - Failed attempt with invalid admin keys
+
+2. Portfolio Management
+   - Adding post-TGE positions with multisig
+   - Adding pre-TGE positions with multisig
+   - Position exit with multisig verification
+
+3. Real Signature Verification
+   - ECDSA signature generation
+   - Message hash verification
+   - Multisig threshold validation
+
 #### Production Environment
 1. Deploy to Arch Network testnet:
 ```powershell
