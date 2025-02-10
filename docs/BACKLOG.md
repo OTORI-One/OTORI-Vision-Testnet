@@ -140,7 +140,7 @@ User interface and interaction layer.
    - [ ] Create transaction state handling
    - [ ] Implement error state management
 
-4. 🟡 Admin Dashboard 🏃‍♂️
+4. �� Admin Dashboard 🏃‍♂️
    - [x] Create admin authentication with multisig
    - [x] Implement token minting interface
      - [x] Add multisig approval flow
@@ -149,12 +149,12 @@ User interface and interaction layer.
      - [x] Add minting reason field
    - [x] Create portfolio management interface
      - [x] Add post-TGE position entry form
-       - [x] Amount bought input
+       - [x] Amount bought input with BTC/USD selection
        - [x] Price per token input
        - [x] Currency spent input
        - [x] Transaction ID verification
      - [x] Add pre-TGE position entry form
-       - [x] Amount bought input
+       - [x] Amount bought input with BTC/USD selection
        - [x] Price per token input
        - [x] Currency spent input
        - [x] SAFE/SAFT inscription ID verification
@@ -193,6 +193,7 @@ User interface and interaction layer.
        - [x] Add status indicators
        - [x] Add explorer links
        - [x] Show signature progress
+       - [x] Add proper currency display (BTC/USD for positions)
 
 5. 🔴 Data Integration 🚶‍♂️
    - [ ] Connect to Arch Network

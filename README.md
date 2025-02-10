@@ -242,22 +242,29 @@ cargo test test_full_flow -- --nocapture
 ## Project Structure
 
 ```
-ovt-fund/
-├── components/          # Reusable React components
-├── pages/              # Next.js pages
-├── public/             # Static assets
+ovt-fund/               # Next.js frontend application
+├── components/         # React components
+├── pages/             # Next.js pages
+├── public/            # Static assets
 ├── src/
-│   ├── hooks/          # Custom React hooks
-│   └── lib/            # Utility functions and clients
-├── styles/             # CSS styles
-└── types/              # TypeScript type definitions
+│   ├── hooks/         # Custom React hooks
+│   ├── lib/           # Utility functions and clients
+│   └── utils/         # Helper functions
+├── styles/            # CSS styles
+└── types/            # TypeScript type definitions
 
-ovt-program/
+ovt-program/           # Rust program for Arch Network
 ├── src/
-│   ├── lib.rs          # Main program logic
-│   ├── client.rs       # Arch Network program client
-│   └── runes_client.rs # Bitcoin Runes protocol client
-└── tests/              # Integration tests
+│   ├── lib.rs         # Main program logic
+│   ├── client.rs      # Arch Network program client
+│   ├── runes_client.rs # Bitcoin Runes protocol client
+│   └── error.rs       # Error definitions
+└── tests/            # Integration tests
+
+docs/                 # Project documentation
+└── BACKLOG.md        # Development backlog
+
+prompt_docs/          # AI assistance documentation
 ```
 
 ## Development Workflow
