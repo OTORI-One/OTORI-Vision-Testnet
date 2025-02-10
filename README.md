@@ -19,6 +19,52 @@ A Next.js application for managing and tracking the OTORI Vision Token (OVT), a 
 - Access to Bitcoin network (testnet for development)
 - Arch Network CLI tools
 
+## Development Approaches
+
+### Option 1: Frontend with Mocked Backend (Recommended for now)
+
+1. Frontend Setup:
+```powershell
+git clone <repository-url>
+cd ovt-fund
+npm install
+```
+
+2. Configure mock environment:
+```powershell
+# Copy the example env file
+cp .env.local.example .env.local
+
+# Update with mock values for development
+NEXT_PUBLIC_PROGRAM_ID=mock_program_id
+NEXT_PUBLIC_TREASURY_ADDRESS=mock_treasury_address
+NEXT_PUBLIC_ARCH_ENDPOINT=http://localhost:8000
+NEXT_PUBLIC_MOCK_MODE=true
+```
+
+3. Run the development server:
+```powershell
+npm run dev
+```
+
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+The frontend will use mock data for:
+- NAV calculations
+- Portfolio values
+- Bitcoin transactions
+- Wallet interactions
+
+### Option 2: Full Stack Development (Pending Arch Network Tools)
+
+**Note:** Full backend integration is pending availability of Arch Network development tools. We'll update these instructions once the tools are ready for public use.
+
+Requirements:
+- Rust and Cargo
+- Arch Network CLI tools (coming soon)
+- Bitcoin testnet access
+- Hardware wallet for treasury management
+
 ## Getting Started
 
 ### Frontend Setup
@@ -65,6 +111,10 @@ cargo --version
 
 3. Clone and build Arch Network tools:
 ```powershell
+# Create a separate directory for Arch tools
+mkdir C:\arch-tools
+cd C:\arch-tools
+
 # Clone the required repositories
 git clone https://github.com/Arch-Network/arch-cli.git
 git clone https://github.com/Arch-Network/arch-node.git
@@ -80,7 +130,10 @@ cargo build --release
 cd ..
 
 # Add the binary directories to your PATH
-$env:PATH += ";$PWD/arch-cli/target/release;$PWD/arch-node/target/release"
+$env:PATH += ";C:\arch-tools\arch-cli\target\release;C:\arch-tools\arch-node\target\release"
+
+# Return to your project directory
+cd C:\Users\admin\Documents\Coding\OVT_on_arch
 ```
 
 4. Verify installation:
