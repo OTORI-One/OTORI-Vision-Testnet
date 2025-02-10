@@ -1,0 +1,23 @@
+# Global owners
+* @OTORI-One/developers
+
+# Frontend specific files
+/ovt-fund/ @OTORI-One/frontend-team
+
+# Rust program files
+/ovt-program/ @OTORI-One/rust-team
+
+# Documentation
+/docs/ @OTORI-One/tech-writers @OTORI-One/developers
+
+# Security-sensitive files
+.github/workflows/ @OTORI-One/security-team
+**/security.yml @OTORI-One/security-team
+**/auth*.ts @OTORI-One/security-team
+**/wallet*.ts @OTORI-One/security-team
+
+# Dependencies
+package.json @OTORI-One/developers
+package-lock.json @OTORI-One/developers
+Cargo.toml @OTORI-One/developers
+Cargo.lock @OTORI-One/developers 

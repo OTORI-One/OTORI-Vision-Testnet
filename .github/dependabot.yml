@@ -24,6 +24,16 @@ updates:
           - "@heroicons/*"
           - "@headlessui/*"
           - "@omnisat/*"
+    reviewers:
+      - "OTORI-One/developers"
+    assignees:
+      - "OTORI-One/developers"
+    ignore:
+      # Don't update Next.js beyond security fixes (to maintain stability)
+      - dependency-name: "next"
+        update-types: ["version-update:semver-major"]
+    # Require tests to pass
+    require-tests: true
 
   # Rust dependencies
   - package-ecosystem: "cargo"
@@ -37,4 +47,9 @@ updates:
       - "rust"
     commit-message:
       prefix: "chore"
-      include: "scope" 
+      include: "scope"
+    reviewers:
+      - "OTORI-One/developers"
+    assignees:
+      - "OTORI-One/developers"
+    require-tests: true 
