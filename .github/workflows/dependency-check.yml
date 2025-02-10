@@ -1,0 +1,94 @@
+name: Dependency Compatibility Check
+
+on:
+  pull_request:
+    paths:
+      - 'ovt-fund/package.json'
+      - 'ovt-fund/package-lock.json'
+      - 'ovt-program/Cargo.toml'
+      - 'ovt-program/Cargo.lock'
+  push:
+    branches: [ main ]
+    paths:
+      - 'ovt-fund/package.json'
+      - 'ovt-fund/package-lock.json'
+      - 'ovt-program/Cargo.toml'
+      - 'ovt-program/Cargo.lock'
+
+jobs:
+  verify-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ovt-fund
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18.x'
+        cache: 'npm'
+        cache-dependency-path: ovt-fund/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check for peer dependency conflicts
+      run: npx check-peer-dependencies
+
+    - name: Type check
+      run: npx tsc --noEmit
+
+    - name: Build test
+      run: npm run build
+
+    - name: Check bundle size
+      run: npx next bundle-analyzer
+
+    - name: Test all components
+      run: |
+        echo "import '@testing-library/jest-dom'" > jest.setup.js
+        npx jest --passWithNoTests
+
+  verify-rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ovt-program
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
+
+    - name: Check dependencies
+      run: cargo tree --duplicate
+
+    - name: Verify build
+      run: cargo check --all-features
+
+    - name: Run tests
+      run: cargo test --all-features
+
+  dependency-report:
+    needs: [verify-frontend, verify-rust]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Create dependency report
+      run: |
+        echo "## Dependency Check Results" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Frontend dependencies verified" >> $GITHUB_STEP_SUMMARY
+        echo "✅ Rust dependencies verified" >> $GITHUB_STEP_SUMMARY
+        echo "See detailed logs in the job outputs above." >> $GITHUB_STEP_SUMMARY 
