@@ -40,22 +40,22 @@ const archClient = new ArchClient({
 const INITIAL_PORTFOLIO_ITEMS = [
   {
     name: 'Polymorphic Labs',
-    value: 200000, // Initial $200k
-    current: 1040000, // 420% growth = $1.04M total
+    value: 500000000, // Initial 500M sats
+    current: 2600000000, // 2.6B sats (₿26.00)
     change: 420,
     description: 'Encryption Layer'
   },
   {
     name: 'VoltFi',
-    value: 150000, // Initial $150k
-    current: 525000, // 250% growth = $525k total
+    value: 150000000, // Initial 150M sats
+    current: 525000000, // 525M sats
     change: 250,
     description: 'Bitcoin Volatility Index on Bitcoin'
   },
   {
     name: 'MIXDTape',
-    value: 100000, // Initial $100k
-    current: 250000, // 150% growth = $250k total
+    value: 100000000, // Initial 100M sats
+    current: 250000000, // 250M sats
     change: 150,
     description: 'Phygital Music for superfans - disrupting Streaming'
   }
@@ -113,7 +113,7 @@ export function useOVTClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [navData, setNavData] = useState<NAVData>({
-    totalValue: '$1.815M',
+    totalValue: '₿33.75', // Total of all current values (26 + 5.25 + 2.5)
     changePercentage: '+302%',
     portfolioItems: INITIAL_PORTFOLIO_ITEMS
   });
@@ -127,7 +127,7 @@ export function useOVTClient() {
         const averageChange = nav.portfolioItems.reduce((sum, item) => sum + item.change, 0) / nav.portfolioItems.length;
         
         setNavData({
-          totalValue: `$${(totalValue / 1000000).toFixed(3)}M`,
+          totalValue: `₿${(totalValue / 100000000).toFixed(2)}`, // Convert sats to BTC
           changePercentage: `${averageChange >= 0 ? '+' : ''}${averageChange.toFixed(1)}%`,
           portfolioItems: nav.portfolioItems.map(item => ({
             name: item.name,
@@ -142,8 +142,8 @@ export function useOVTClient() {
       }
     };
 
-    fetchNAV(); // Initial fetch
-    const interval = setInterval(fetchNAV, 30000); // Update every 30 seconds
+    fetchNAV();
+    const interval = setInterval(fetchNAV, 30000);
 
     return () => clearInterval(interval);
   }, []);
@@ -155,19 +155,13 @@ export function useOVTClient() {
 
     try {
       const history = await archClient.getTransactionHistory('all');
-      // Map ArchTransaction to our Transaction type
       return history.map(tx => ({
         txid: tx.txid,
         type: mapTransactionType(tx.type),
         amount: tx.amount,
         timestamp: tx.timestamp,
         status: mapTransactionStatus(tx.confirmations),
-        details: {
-          reason: tx.metadata?.reason,
-          position: tx.metadata?.position,
-          signatures: tx.metadata?.signatures,
-          currency: tx.metadata?.currency,
-        }
+        details: tx.metadata || {}
       }));
     } catch (err) {
       console.error('Failed to fetch transaction history:', err);
@@ -176,14 +170,13 @@ export function useOVTClient() {
   }, []);
 
   // Helper function to map transaction types
-  const mapTransactionType = (type: string): Transaction['type'] => {
+  const mapTransactionType = (type: 'MINT' | 'BURN' | 'TRANSFER' | 'POSITION_ENTRY' | 'POSITION_EXIT'): Transaction['type'] => {
     switch (type) {
       case 'MINT': return 'mint';
       case 'BURN': return 'burn';
       case 'TRANSFER': return 'transfer';
       case 'POSITION_ENTRY': return 'position_entry';
       case 'POSITION_EXIT': return 'position_exit';
-      default: return 'transfer';
     }
   };
 

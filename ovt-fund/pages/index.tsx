@@ -7,6 +7,7 @@ import PriceChart from '../components/PriceChart';
 import ChartToggle from '../components/ChartToggle';
 import { useOVTClient } from '../src/hooks/useOVTClient';
 import AdminDashboard from '../components/admin/AdminDashboard';
+import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
 
 export default function Dashboard() {
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
@@ -15,6 +16,7 @@ export default function Dashboard() {
   const [sellAmount, setSellAmount] = useState<string>('');
   const [baseCurrency, setBaseCurrency] = useState<'usd' | 'btc'>('usd');
   const { isLoading, error, navData, buyOVT, sellOVT } = useOVTClient();
+  const { price: btcPrice } = useBitcoinPrice();
 
   // Calculate OVT price based on NAV
   const ovtPrice = useMemo(() => {
@@ -30,8 +32,8 @@ export default function Dashboard() {
       if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
       return `$${value.toFixed(2)}`;
     } else {
-      const btcPrice = 40000; // TODO: Get real BTC price
-      const sats = Math.floor((value / btcPrice) * 100000000);
+      const currentBtcPrice = btcPrice || 40000; // Use real BTC price if available
+      const sats = Math.floor((value / currentBtcPrice) * 100000000);
       if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
       if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
       if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
@@ -79,7 +81,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-100">
       <Head>
         <title>OTORI Vision Token Dashboard</title>
-        <meta name="description" content="OTORI Vision Token Performance Dashboard" />
+        <meta name="description" content="OTORI Vision Token Dashboard" />
       </Head>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
@@ -87,7 +89,7 @@ export default function Dashboard() {
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center">
             <img src="/logo.svg" alt="OTORI" className="h-8 w-8 mr-2" />
-            <h1 className="text-2xl font-bold text-gray-900">OTORI Vision Token Performance</h1>
+            <h1 className="text-2xl font-bold text-gray-900">OTORI Vision Token Dashboard</h1>
           </div>
           <div className="flex items-center space-x-4">
             <button

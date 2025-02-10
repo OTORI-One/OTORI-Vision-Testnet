@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import TokenExplorerModal from './TokenExplorerModal';
+import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
 
 interface NAVData {
   name: string;
@@ -17,14 +18,15 @@ interface NAVVisualizationProps {
   baseCurrency?: 'usd' | 'btc';
 }
 
-const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd') => {
+const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
     if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
     return `$${value.toFixed(2)}`;
   } else {
-    const btcPrice = 40000; // TODO: Get real BTC price
-    const sats = Math.floor((value / btcPrice) * 100000000);
+    // Use real BTC price if available, fallback to mock price
+    const currentBtcPrice = btcPrice || 40000;
+    const sats = Math.floor((value / currentBtcPrice) * 100000000);
     if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
     if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
     if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
@@ -85,6 +87,7 @@ const getInitialTransaction = (value: number, currency: 'usd' | 'btc' = 'usd') =
 
 export default function NAVVisualization({ data, totalValue, changePercentage, baseCurrency = 'usd' }: NAVVisualizationProps) {
   const [selectedToken, setSelectedToken] = useState<NAVData | null>(null);
+  const { price: btcPrice } = useBitcoinPrice();
 
   const formattedData = useMemo(() => {
     return data.map(item => ({
@@ -95,7 +98,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
   }, [data]);
 
   const formatYAxis = (value: number) => {
-    return formatCurrencyValue(value, baseCurrency);
+    return formatCurrencyValue(value, baseCurrency, btcPrice);
   };
 
   // Calculate the maximum value for proper Y-axis scaling

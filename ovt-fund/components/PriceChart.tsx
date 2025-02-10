@@ -1,4 +1,5 @@
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
 
 interface PriceData {
   name: string;
@@ -10,14 +11,14 @@ interface PriceChartProps {
   baseCurrency?: 'usd' | 'btc';
 }
 
-const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd') => {
+const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
     if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
     return `$${value.toFixed(2)}`;
   } else {
-    const btcPrice = 40000; // TODO: Get real BTC price
-    const sats = Math.floor((value / btcPrice) * 100000000);
+    const currentBtcPrice = btcPrice || 40000; // Use real BTC price if available
+    const sats = Math.floor((value / currentBtcPrice) * 100000000);
     if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
     if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
     if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
@@ -25,14 +26,14 @@ const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd') => 
   }
 };
 
-const CustomTooltip = ({ active, payload, label, currency }: any) => {
+const CustomTooltip = ({ active, payload, label, currency, btcPrice }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
       <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
         <p className="text-sm text-gray-600">{data.name}</p>
         <p className="text-lg font-semibold mt-1">
-          {formatCurrencyValue(data.value, currency)}
+          {formatCurrencyValue(data.value, currency, btcPrice)}
         </p>
       </div>
     );
@@ -48,8 +49,10 @@ const mockData = [
 ];
 
 export default function PriceChart({ data = mockData, baseCurrency = 'usd' }: PriceChartProps) {
+  const { price: btcPrice } = useBitcoinPrice();
+
   const formatYAxis = (value: number) => {
-    return formatCurrencyValue(value, baseCurrency);
+    return formatCurrencyValue(value, baseCurrency, btcPrice);
   };
 
   // Calculate the maximum value for proper Y-axis scaling
@@ -87,7 +90,7 @@ export default function PriceChart({ data = mockData, baseCurrency = 'usd' }: Pr
               domain={yAxisDomain}
               padding={{ top: 20 }}
             />
-            <Tooltip content={(props) => <CustomTooltip {...props} currency={baseCurrency} />} />
+            <Tooltip content={(props) => <CustomTooltip {...props} currency={baseCurrency} btcPrice={btcPrice} />} />
             <Line
               type="monotone"
               dataKey="value"

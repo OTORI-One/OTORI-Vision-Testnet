@@ -1,10 +1,26 @@
 import { PublicKey } from '@omnisat/lasereyes';
 
+// Add a type declaration to fix the missing type
+declare module '@omnisat/lasereyes' {
+  export class PublicKey {
+    toString(): string;
+    toBuffer(): Buffer;
+    equals(other: PublicKey): boolean;
+  }
+}
+
 export interface ArchTransaction {
   txid: string;
+  type: 'MINT' | 'BURN' | 'TRANSFER' | 'POSITION_ENTRY' | 'POSITION_EXIT';
   amount: number;
   confirmations: number;
   timestamp: number;
+  metadata?: {
+    reason?: string;
+    position?: string;
+    signatures?: string[];
+    currency?: string;
+  };
 }
 
 export interface NAVUpdate {

@@ -20,6 +20,11 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
   const [isSigningInProgress, setIsSigningInProgress] = useState(false);
   const { connect, disconnect, address, signMessage } = useLaserEyes();
 
+  // TODO: Add validation to prevent the same admin from signing multiple times
+  // 1. Store admin addresses with their signatures
+  // 2. Check if current admin has already signed
+  // 3. Prevent duplicate signatures from the same admin wallet
+
   useEffect(() => {
     if (!isOpen) {
       setSignatures([]);
@@ -57,16 +62,17 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
       if (!signatures.includes(signature)) {
         const newSignatures = [...signatures, signature];
         setSignatures(newSignatures);
-
-        // If we have 3 signatures, complete the process
-        if (newSignatures.length >= 3) {
-          onComplete(newSignatures);
-        }
       }
     } catch (err) {
       console.error('Failed to sign message:', err);
     } finally {
       setIsSigningInProgress(false);
+    }
+  };
+
+  const handleComplete = () => {
+    if (signatures.length >= 3) {
+      onComplete(signatures);
     }
   };
 
@@ -130,7 +136,21 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
 
                     {/* Signature Progress */}
                     <div className="mt-4">
-                      <h4 className="text-sm font-medium text-gray-900">Signature Progress</h4>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-900">Signature Progress</h4>
+                        <span className="text-sm font-medium text-blue-600">
+                          {signatures.length}/5 signatures collected
+                        </span>
+                      </div>
+                      <div className="relative">
+                        {/* Progress bar background */}
+                        <div className="h-2 bg-gray-200 rounded-full" />
+                        {/* Progress bar fill */}
+                        <div 
+                          className="absolute top-0 h-2 bg-blue-600 rounded-full transition-all duration-300 ease-in-out"
+                          style={{ width: `${(signatures.length / 5) * 100}%` }}
+                        />
+                      </div>
                       <div className="mt-2 space-y-2">
                         {Array.from({ length: 5 }).map((_, index) => (
                           <div
@@ -154,7 +174,15 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
                 </div>
 
                 <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                  {!address ? (
+                  {signatures.length >= 3 ? (
+                    <button
+                      type="button"
+                      className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto"
+                      onClick={handleComplete}
+                    >
+                      Complete Transaction
+                    </button>
+                  ) : !address ? (
                     <button
                       type="button"
                       className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto"
