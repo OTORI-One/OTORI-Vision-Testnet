@@ -1,8 +1,11 @@
-C:\Users\admin\Documents\Coding\OVT_on_arch\target\debug\deps\ovt_program.dll: ovt-program\src\lib.rs ovt-program\src\mock_sdk.rs
+/home/danmercurius/Coding/OTORI-Vision-Testnet/target/debug/deps/libovt_program.so: program/src/lib.rs program/src/error.rs program/src/mock_sdk.rs program/src/system.rs program/src/utxo.rs
 
-C:\Users\admin\Documents\Coding\OVT_on_arch\target\debug\deps\libovt_program.rlib: ovt-program\src\lib.rs ovt-program\src\mock_sdk.rs
+/home/danmercurius/Coding/OTORI-Vision-Testnet/target/debug/deps/libovt_program.rlib: program/src/lib.rs program/src/error.rs program/src/mock_sdk.rs program/src/system.rs program/src/utxo.rs
 
-C:\Users\admin\Documents\Coding\OVT_on_arch\target\debug\deps\ovt_program.d: ovt-program\src\lib.rs ovt-program\src\mock_sdk.rs
+/home/danmercurius/Coding/OTORI-Vision-Testnet/target/debug/deps/ovt_program.d: program/src/lib.rs program/src/error.rs program/src/mock_sdk.rs program/src/system.rs program/src/utxo.rs
 
-ovt-program\src\lib.rs:
-ovt-program\src\mock_sdk.rs:
+program/src/lib.rs:
+program/src/error.rs:
+program/src/mock_sdk.rs:
+program/src/system.rs:
+program/src/utxo.rs:

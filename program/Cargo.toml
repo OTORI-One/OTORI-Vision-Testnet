@@ -1,0 +1,23 @@
+[package]
+name = "ovt-program"
+version = "0.1.0"
+edition = "2021"
+description = "OTORI Vision Token (OVT) Program using Runes Protocol"
+
+[lib]
+name = "ovt_program"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+borsh = { workspace = true }
+thiserror = { workspace = true }
+bitcoin = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+anyhow = { workspace = true } 
