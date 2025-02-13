@@ -6,13 +6,16 @@ use crate::mock_sdk::{
 use borsh::BorshSerialize;
 
 pub fn create_program_account(
-    _program_id: &Pubkey,
-    _account_info: &AccountInfo,
+    program_id: &Pubkey,
+    account_info: &AccountInfo,
     _authority_info: &AccountInfo,
-    _space: u64,
+    space: u64,
     _system_program: &AccountInfo,
 ) -> ProgramResult {
     // Mock implementation for testing
+    let mut data = account_info.data.borrow_mut();
+    data.resize(space as usize, 0);
+    *account_info.owner.borrow_mut() = *program_id;
     Ok(())
 }
 

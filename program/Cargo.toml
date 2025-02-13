@@ -10,7 +10,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-serde = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 borsh = { workspace = true }
 thiserror = { workspace = true }
@@ -19,5 +19,9 @@ hex = { workspace = true }
 rand = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true }
-anyhow = { workspace = true } 
+tokio = { workspace = true, features = ["full"] }
+anyhow = { workspace = true }
+rand = { workspace = true }
+bitcoin = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true } 

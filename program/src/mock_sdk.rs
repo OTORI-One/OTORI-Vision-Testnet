@@ -4,18 +4,19 @@ use std::io;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
-use crate::OVTState;
+use std::sync::{Arc, Mutex};
 
 // Re-export common types at the root level
 pub use account_info::AccountInfo;
 pub use pubkey::Pubkey;
-pub use program::{Program, ProgramContext, AccountMeta, Instruction};
+pub use program::{Program, ProgramContext, AccountMeta};
 
 // Define ProgramResult at the root level
 pub type ProgramResult = Result<(), ProgramError>;
 
 pub mod pubkey {
     use super::*;
+    use std::io::Read;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Pubkey(pub [u8; 32]);
@@ -53,7 +54,7 @@ pub mod pubkey {
             Ok(Self(bytes))
         }
 
-        fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
             let mut bytes = [0u8; 32];
             reader.read_exact(&mut bytes)?;
             Ok(Self(bytes))
@@ -65,14 +66,27 @@ pub mod account_info {
     use super::*;
     use super::pubkey::Pubkey;
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub struct AccountInfo {
         pub key: Pubkey,
         pub is_signer: bool,
         pub is_writable: bool,
         pub lamports: RefCell<u64>,
         pub data: RefCell<Vec<u8>>,
-        pub owner: Pubkey,
+        pub owner: RefCell<Pubkey>,
+    }
+
+    impl Clone for AccountInfo {
+        fn clone(&self) -> Self {
+            Self {
+                key: self.key,
+                is_signer: self.is_signer,
+                is_writable: self.is_writable,
+                lamports: RefCell::clone(&self.lamports),  // Share the same RefCell
+                data: RefCell::clone(&self.data),          // Share the same RefCell
+                owner: RefCell::clone(&self.owner),        // Share the same RefCell
+            }
+        }
     }
 
     impl AccountInfo {
@@ -83,7 +97,7 @@ pub mod account_info {
                 is_writable,
                 lamports: RefCell::new(0),
                 data: RefCell::new(Vec::new()),
-                owner: Pubkey::new(),
+                owner: RefCell::new(Pubkey::new()),
             }
         }
 
@@ -92,7 +106,6 @@ pub mod account_info {
             if data.is_empty() {
                 return Err(ProgramError::InvalidAccountData);
             }
-            
             borsh::BorshDeserialize::try_from_slice(&data)
                 .map_err(|_| ProgramError::InvalidAccountData)
         }
@@ -103,10 +116,8 @@ pub mod account_info {
             }
             let serialized = borsh::to_vec(data)
                 .map_err(|_| ProgramError::InvalidAccountData)?;
-            
             let mut account_data = self.data.borrow_mut();
-            account_data.resize(serialized.len(), 0);
-            account_data.copy_from_slice(&serialized);
+            *account_data = serialized;  // Replace entire Vec instead of using copy_from_slice
             Ok(())
         }
     }
@@ -146,31 +157,11 @@ pub mod program {
         }
     }
 
-    #[derive(Clone, Debug)]
-    pub struct Instruction {
-        pub program_id: Pubkey,
-        pub accounts: Vec<AccountMeta>,
-        pub data: Vec<u8>,
-    }
-
-    impl Instruction {
-        pub fn new_with_borsh(
-            program_id: Pubkey,
-            data: &impl BorshSerialize,
-            accounts: Vec<AccountMeta>,
-        ) -> Self {
-            let data = borsh::to_vec(data).unwrap();
-            Self {
-                program_id,
-                accounts,
-                data,
-            }
-        }
-    }
-
+    #[derive(Clone)]
     pub struct ProgramContext {
         pub program_id: Pubkey,
         pub accounts: Vec<AccountInfo>,
+        pub test_client: Option<super::test_utils::TestClient>,
     }
 
     impl ProgramContext {
@@ -178,11 +169,30 @@ pub mod program {
             Self {
                 program_id,
                 accounts,
+                test_client: None,
+            }
+        }
+
+        pub fn with_test_client(
+            program_id: Pubkey,
+            accounts: Vec<AccountInfo>,
+            test_client: super::test_utils::TestClient,
+        ) -> Self {
+            Self {
+                program_id,
+                accounts,
+                test_client: Some(test_client),
             }
         }
 
         pub fn get(&self, index: usize) -> Result<&AccountInfo, ProgramError> {
             self.accounts.get(index).ok_or(ProgramError::AccountNotFound)
+        }
+
+        pub fn is_admin(&self, pubkey: &Pubkey) -> bool {
+            self.test_client.as_ref()
+                .map(|client| client.is_admin(pubkey))
+                .unwrap_or(false)
         }
     }
 }
@@ -240,70 +250,54 @@ pub mod test_utils {
     use super::*;
     use super::account_info::AccountInfo;
     use super::pubkey::Pubkey;
-    use super::program::AccountMeta;
-    
+    use super::program::{Program, ProgramContext};
+
     #[derive(Debug, Clone)]
     pub struct AccountHandle {
         pub key: Pubkey,
         pub is_signer: bool,
         pub is_writable: bool,
     }
-    
-    pub struct TestClient {
-        pub accounts: HashMap<Pubkey, AccountInfo>,
-        next_pubkey: u64,
+
+    #[derive(Debug, Clone)]
+    pub struct AdminAction {
+        pub action_type: String,
+        pub description: String,
+        pub signatures: Vec<String>,
+        pub signed_by: Vec<Pubkey>,
     }
-    
+
+    #[derive(Clone)]
+    pub struct TestClient {
+        pub accounts: Arc<Mutex<HashMap<Pubkey, AccountInfo>>>,
+        pub admin_accounts: Arc<Mutex<HashMap<Pubkey, bool>>>,
+        pub pending_actions: Arc<Mutex<Vec<AdminAction>>>,
+        pub required_signatures: usize,
+        pub total_admins: usize,
+    }
+
     impl TestClient {
         pub fn new() -> Self {
             Self {
-                accounts: HashMap::new(),
-                next_pubkey: 0,
+                accounts: Arc::new(Mutex::new(HashMap::new())),
+                admin_accounts: Arc::new(Mutex::new(HashMap::new())),
+                pending_actions: Arc::new(Mutex::new(Vec::new())),
+                required_signatures: 3, // 3 out of 5 required
+                total_admins: 5,
             }
         }
-        
-        pub fn create_token_account(
-            &mut self,
-            program_id: Pubkey,
-            mint: Pubkey,
-            owner: Pubkey,
-        ) -> Result<AccountHandle, ProgramError> {
+
+        pub fn create_account(&mut self, program_id: Pubkey) -> Result<AccountHandle, ProgramError> {
             let key = Pubkey::new_unique();
-            let account = AccountInfo::new(key, false, true);
-            let token_account = TokenAccount {
-                mint,
-                owner,
-                amount: 0,
-                delegate: None,
-                state: 1,
-                is_native: None,
-                delegated_amount: 0,
-                close_authority: None,
-            };
-            account.set_data(&token_account)?;
-            self.accounts.insert(key, account);
-            Ok(AccountHandle {
+            let account = AccountInfo {
                 key,
                 is_signer: false,
                 is_writable: true,
-            })
-        }
-        
-        pub fn create_account(&mut self, program_id: Pubkey) -> Result<AccountHandle, ProgramError> {
-            let key = Pubkey::new_unique();
-            let mut account = AccountInfo::new(key, false, true);
-            account.owner = program_id;
-            
-            // Initialize with empty OVTState
-            let empty_state = OVTState {
-                nav_sats: 0,
-                treasury_pubkey_bytes: [0u8; 33],
-                total_supply: 0,
-                last_nav_update: 0,
+                lamports: RefCell::new(0),
+                data: RefCell::new(vec![0; 1024]), // Allocate 1KB of space by default
+                owner: RefCell::new(program_id),
             };
-            
-            account.set_data(&empty_state)?;
-            self.accounts.insert(key, account);
+            self.accounts.lock().unwrap().insert(key, account);
             Ok(AccountHandle {
                 key,
                 is_signer: false,
@@ -311,16 +305,96 @@ pub mod test_utils {
             })
         }
 
-        pub fn create_account_with_lamports(&mut self, lamports: u64) -> Result<AccountHandle, ProgramError> {
+        pub fn create_admin_account(&mut self, _program_id: Pubkey) -> Result<AccountHandle, ProgramError> {
+            if self.admin_accounts.lock().unwrap().len() >= self.total_admins {
+                return Err(ProgramError::Custom("Maximum number of admins reached".to_string()));
+            }
+
             let key = Pubkey::new_unique();
-            let account = AccountInfo::new(key, false, true);
-            *account.lamports.borrow_mut() = lamports;
-            self.accounts.insert(key, account);
+            let account = AccountInfo {
+                key,
+                is_signer: true,
+                is_writable: false,
+                lamports: RefCell::new(1000000),
+                data: RefCell::new(Vec::new()),
+                owner: RefCell::new(Pubkey::new()),
+            };
+            self.accounts.lock().unwrap().insert(key, account);
+            self.admin_accounts.lock().unwrap().insert(key, true);
             Ok(AccountHandle {
                 key,
-                is_signer: false,
-                is_writable: true,
+                is_signer: true,
+                is_writable: false,
             })
+        }
+
+        pub fn is_admin(&self, pubkey: &Pubkey) -> bool {
+            self.admin_accounts.lock().unwrap().get(pubkey).copied().unwrap_or(false)
+        }
+
+        pub fn sign_action(
+            &mut self,
+            admin_key: &Pubkey,
+            action_type: String,
+            description: String,
+            signature: String,
+        ) -> Result<bool, ProgramError> {
+            if !self.is_admin(admin_key) {
+                return Err(ProgramError::Custom("Not an admin".to_string()));
+            }
+
+            let mut pending_actions = self.pending_actions.lock().unwrap();
+            let action = pending_actions
+                .iter_mut()
+                .find(|a| a.action_type == action_type);
+
+            match action {
+                Some(action) => {
+                    if action.signed_by.contains(admin_key) {
+                        return Err(ProgramError::Custom("Admin already signed".to_string()));
+                    }
+                    action.signatures.push(signature);
+                    action.signed_by.push(*admin_key);
+                }
+                None => {
+                    pending_actions.push(AdminAction {
+                        action_type,
+                        description,
+                        signatures: vec![signature],
+                        signed_by: vec![*admin_key],
+                    });
+                }
+            }
+
+            // Check if we have enough signatures
+            if let Some(action) = pending_actions.last() {
+                Ok(action.signatures.len() >= self.required_signatures)
+            } else {
+                Ok(false)
+            }
+        }
+
+        pub fn verify_action(
+            &self,
+            action_type: &str,
+            signatures: &[String],
+        ) -> Result<bool, ProgramError> {
+            if signatures.len() < self.required_signatures {
+                return Ok(false);
+            }
+
+            let pending_actions = self.pending_actions.lock().unwrap();
+            if let Some(action) = pending_actions.iter().find(|a| a.action_type == action_type) {
+                // Verify all provided signatures are valid
+                for sig in signatures {
+                    if !action.signatures.contains(sig) {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            } else {
+                Ok(false)
+            }
         }
 
         pub fn process_transaction(
@@ -329,31 +403,52 @@ pub mod test_utils {
             accounts: Vec<AccountMeta>,
             instruction_data: Vec<u8>,
         ) -> ProgramResult {
-            let account_infos: Vec<AccountInfo> = accounts
-                .iter()
-                .map(|meta| {
-                    match self.accounts.get(&meta.pubkey) {
-                        Some(account) => {
-                            let mut account = account.clone();
-                            account.is_signer = meta.is_signer;
-                            account.is_writable = meta.is_writable;
-                            account
-                        }
-                        None => panic!("Account not found: {:?}", meta.pubkey),
+            let mut ctx_accounts = Vec::new();
+            let mut original_keys = Vec::new();
+            
+            // First, collect the accounts and their metadata
+            let mut account_map = self.accounts.lock().unwrap();
+            for meta in accounts {
+                let account = account_map.get(&meta.pubkey)
+                    .ok_or(ProgramError::AccountNotFound)?;
+                
+                // Store original key for writable accounts
+                if meta.is_writable {
+                    original_keys.push(meta.pubkey);
+                }
+                
+                // Create new AccountInfo with same data
+                let account_info = AccountInfo {
+                    key: account.key,
+                    is_signer: meta.is_signer,
+                    is_writable: meta.is_writable,
+                    lamports: account.lamports.clone(),  // Share the same RefCell
+                    data: account.data.clone(),          // Share the same RefCell
+                    owner: account.owner.clone(),        // Share the same RefCell
+                };
+                
+                ctx_accounts.push(account_info);
+            }
+
+            // Drop the lock before processing instruction
+            drop(account_map);
+
+            let ctx = ProgramContext::with_test_client(program_id, ctx_accounts, self.clone());
+            let result = crate::OVTProgram::process_instruction(&ctx, &instruction_data);
+
+            // If instruction succeeded, update writable accounts in the map
+            if result.is_ok() {
+                let mut account_map = self.accounts.lock().unwrap();
+                for (account_info, original_key) in ctx.accounts.into_iter()
+                    .zip(original_keys.iter())
+                    .filter(|(acc, _)| acc.is_writable)
+                {
+                    if let Some(account) = account_map.get_mut(original_key) {
+                        // Update the contents of the RefCells instead of replacing them
+                        *account.lamports.borrow_mut() = *account_info.lamports.borrow();
+                        account.data.borrow_mut().clone_from(&account_info.data.borrow());
+                        *account.owner.borrow_mut() = *account_info.owner.borrow();
                     }
-                })
-                .collect();
-
-            let program_context = program::ProgramContext {
-                program_id,
-                accounts: account_infos.clone(),
-            };
-
-            let result = crate::OVTProgram::process_instruction(&program_context, &instruction_data);
-
-            for account in account_infos.iter() {
-                if account.is_writable {
-                    self.accounts.insert(account.key, account.clone());
                 }
             }
 
@@ -361,20 +456,9 @@ pub mod test_utils {
         }
 
         pub fn get_account_data<T: BorshDeserialize>(&self, pubkey: &Pubkey) -> Result<T, ProgramError> {
-            self.accounts.get(pubkey)
+            self.accounts.lock().unwrap().get(pubkey)
                 .ok_or(ProgramError::AccountNotFound)?
                 .get_data()
-        }
-
-        pub fn get_token_account(&self, pubkey: &Pubkey) -> Result<TokenAccount, ProgramError> {
-            self.get_account_data(pubkey)
-        }
-
-        pub fn set_account_data<T: BorshSerialize>(&mut self, pubkey: &Pubkey, data: &T) -> Result<(), ProgramError> {
-            let account = self.accounts.get_mut(pubkey)
-                .ok_or(ProgramError::AccountNotFound)?;
-            account.set_data(data)?;
-            Ok(())
         }
     }
 }
