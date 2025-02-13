@@ -1,4 +1,4 @@
-# OTORI Vision Token (OVT) Dashboard
+# OTORI Vision Dashboard
 
 A Next.js application for managing and tracking the OTORI Vision Token (OVT), a transparent and efficient on-chain VC fund.
 
