@@ -106,3 +106,7 @@ Icon
 .directory
 .Trash-*
 .nfs*
+
+# Arch Network
+.arch-validator/
+.arch_data/
