@@ -38,6 +38,7 @@ yarn-error.log*
 # IDE and editor files
 .idea/
 .vscode/
+.cursorignore
 *.swp
 *.swo
 .DS_Store
@@ -54,6 +55,7 @@ yarn-error.log*
 next-env.d.ts
 
 # Internal Files
+otori-rules.mdc
 .Figma
 /docs/
 /prompt_docs/
