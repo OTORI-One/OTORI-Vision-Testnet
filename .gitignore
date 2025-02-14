@@ -112,3 +112,15 @@ Icon
 # Arch Network
 .arch-validator/
 .arch_data/
+.arch-data*/
+
+# Bitcoin Core data
+.bitcoin/
+bitcoin/
+*.dat
+
+# Logs and temporary files
+*.log
+app.log
+new_blocks.txt
+*.tmp

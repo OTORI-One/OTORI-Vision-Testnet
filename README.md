@@ -21,13 +21,22 @@ A Next.js application for managing and tracking the OTORI Vision Token (OVT), a 
 
 ## Development Environment Setup
 
-### 1. System Dependencies
+### 1. Environment Configuration
+```bash
+# Copy the example environment file
+cp ovt-fund/.env.example ovt-fund/.env.local
+
+# Edit .env.local with your specific configuration
+# For local development, the default values in .env.example should work
+```
+
+### 2. System Dependencies
 ```bash
 # For Manjaro/Arch Linux
 sudo pacman -S base-devel clang llvm rocksdb snappy zlib bzip2
 ```
 
-### 2. Bitcoin Core Setup
+### 3. Bitcoin Core Setup
 ```bash
 # Install Bitcoin Core
 sudo pacman -S bitcoin
@@ -45,7 +54,7 @@ rpcbind=0.0.0.0" > ~/.bitcoin/bitcoin.conf
 bitcoind -regtest -daemon
 ```
 
-### 3. Electrs Setup
+### 4. Electrs Setup
 ```bash
 # Create directory for Arch tools
 mkdir -p ~/Coding/arch-tools
@@ -57,7 +66,7 @@ cd electrs
 cargo build --release
 ```
 
-### 4. Arch Validator Setup
+### 5. Arch Validator Setup
 ```bash
 # Create project directory
 mkdir -p ~/Coding/OTORI-Vision-Testnet
