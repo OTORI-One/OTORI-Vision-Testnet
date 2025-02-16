@@ -5,6 +5,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use bitcoin::hashes::{sha256, Hash};
+use std::sync::atomic::{AtomicU64, Ordering};
+use borsh::io::{Error as BorshError, Write as BorshWrite, Read as BorshRead, ErrorKind};
 
 // Re-export common types at the root level
 pub use account_info::AccountInfo;
@@ -16,7 +19,6 @@ pub type ProgramResult = Result<(), ProgramError>;
 
 pub mod pubkey {
     use super::*;
-    use std::io::Read;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub struct Pubkey(pub [u8; 32]);
@@ -27,26 +29,24 @@ pub mod pubkey {
         }
 
         pub fn new_unique() -> Self {
-            use rand::RngCore;
+            let input = format!("test_key_{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+            let hash = sha256::Hash::hash(input.as_bytes());
             let mut bytes = [0u8; 32];
-            rand::thread_rng().fill_bytes(&mut bytes);
+            bytes.copy_from_slice(&hash[..]);
             Self(bytes)
         }
     }
 
     impl BorshSerialize for Pubkey {
-        fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-            writer.write_all(&self.0)
+        fn serialize<W: BorshWrite>(&self, writer: &mut W) -> Result<(), BorshError> {
+            writer.write_all(&self.0).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to write pubkey"))
         }
     }
 
     impl BorshDeserialize for Pubkey {
-        fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        fn deserialize(buf: &mut &[u8]) -> Result<Self, BorshError> {
             if buf.len() < 32 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "insufficient bytes",
-                ));
+                return Err(BorshError::new(ErrorKind::InvalidData, "Insufficient bytes for pubkey"));
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&buf[..32]);
@@ -54,9 +54,9 @@ pub mod pubkey {
             Ok(Self(bytes))
         }
 
-        fn deserialize_reader<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        fn deserialize_reader<R: BorshRead>(reader: &mut R) -> Result<Self, BorshError> {
             let mut bytes = [0u8; 32];
-            reader.read_exact(&mut bytes)?;
+            reader.read_exact(&mut bytes).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to read pubkey"))?;
             Ok(Self(bytes))
         }
     }
@@ -234,6 +234,12 @@ impl From<io::Error> for ProgramError {
     }
 }
 
+impl From<borsh::io::Error> for ProgramError {
+    fn from(_err: borsh::io::Error) -> Self {
+        ProgramError::InvalidInstructionData
+    }
+}
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct TokenAccount {
     pub mint: pubkey::Pubkey,
@@ -407,7 +413,7 @@ pub mod test_utils {
             let mut original_keys = Vec::new();
             
             // First, collect the accounts and their metadata
-            let mut account_map = self.accounts.lock().unwrap();
+            let account_map = self.accounts.lock().unwrap();
             for meta in accounts {
                 let account = account_map.get(&meta.pubkey)
                     .ok_or(ProgramError::AccountNotFound)?;
@@ -429,9 +435,6 @@ pub mod test_utils {
                 
                 ctx_accounts.push(account_info);
             }
-
-            // Drop the lock before processing instruction
-            drop(account_map);
 
             let ctx = ProgramContext::with_test_client(program_id, ctx_accounts, self.clone());
             let result = crate::OVTProgram::process_instruction(&ctx, &instruction_data);

@@ -4,24 +4,24 @@ version = "0.1.0"
 edition = "2021"
 description = "OTORI Vision Token (OVT) Program using Runes Protocol"
 
+[workspace]
+
 [lib]
 name = "ovt_program"
 path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true }
-borsh = { workspace = true }
-thiserror = { workspace = true }
-bitcoin = { workspace = true }
-hex = { workspace = true }
-rand = { workspace = true }
+serde = { version = "1.0", features = ["derive"], default-features = false }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+borsh = { version = "1.5", features = ["derive"], default-features = false }
+thiserror = { version = "2.0", default-features = false }
+bitcoin = { version = "0.30.1", default-features = false, features = ["std"] }
+hex = { version = "0.4", default-features = false }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["full"] }
-anyhow = { workspace = true }
-rand = { workspace = true }
-bitcoin = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true } 
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+bitcoin = { version = "0.30.1", features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0" 

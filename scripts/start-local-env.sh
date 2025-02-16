@@ -21,13 +21,34 @@ check_electrs() {
 # Function to check if Electrs RPC is responsive
 check_electrs_rpc() {
     echo "Attempting to connect to Electrs RPC on 127.0.0.1:60401..."
-    if nc -zv 127.0.0.1 60401 2>/dev/null; then
+    if timeout 2 bash -c "echo > /dev/tcp/127.0.0.1/60401" 2>/dev/null; then
         echo "Successfully connected to Electrs RPC"
         return 0
     else
         echo "Failed to connect to Electrs RPC"
+        if ss -tlnp 2>/dev/null | grep -q ":60401"; then
+            echo "Port 60401 is being listened to, but connection failed"
+            ss -tlnp 2>/dev/null | grep ":60401"
+        else
+            echo "No process is listening on port 60401"
+        fi
         return 1
     fi
+}
+
+# Function to check if Arch validator is responsive
+check_validator() {
+    # First check if the port is open
+    if ! check_port 8000; then
+        return 1
+    fi
+    
+    # Then check if the validator is actually responding
+    if ! curl -s http://127.0.0.1:8000/health >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to wait for Bitcoin Core
@@ -104,18 +125,93 @@ wait_for_electrs_rpc() {
     echo "Electrs RPC is ready!"
 }
 
+# Function to wait for Arch validator
+wait_for_validator() {
+    local max_attempts=30
+    local attempt=1
+    
+    echo "Waiting for Arch validator to be ready..."
+    
+    # First ensure the validator directory exists and is clean
+    echo "Preparing validator directory..."
+    rm -rf .arch-validator/*
+    mkdir -p .arch-validator
+    
+    # Start the validator
+    echo "Starting Arch validator..."
+    RUST_LOG=info arch-cli validator-start > .arch-validator/validator.log 2>&1 &
+    VALIDATOR_PID=$!
+    
+    # Wait for it to be ready
+    while ! check_validator; do
+        if [ $attempt -ge $max_attempts ]; then
+            echo "Arch validator failed to start after $max_attempts attempts"
+            echo "Checking validator process status..."
+            if ps -p $VALIDATOR_PID > /dev/null; then
+                echo "Validator process is still running (PID: $VALIDATOR_PID)"
+                echo "Last few lines of validator log:"
+                tail -n 20 .arch-validator/validator.log
+            else
+                echo "Validator process is not running!"
+                echo "Last few lines of validator log:"
+                tail -n 20 .arch-validator/validator.log
+            fi
+            exit 1
+        fi
+        echo "Attempt $attempt: Arch validator not ready yet..."
+        sleep 2
+        ((attempt++))
+    done
+    echo "Arch validator is ready!"
+}
+
 # Clean up function
 cleanup() {
     echo "Cleaning up..."
-    bitcoin-cli -regtest stop
-    pkill electrs
-    pkill arch-cli
-    pkill next
+    echo "Stopping Bitcoin Core..."
+    bitcoin-cli -regtest stop 2>/dev/null || true
+    
+    echo "Stopping Electrs processes..."
+    pkill electrs || true
+    # Wait for processes to stop
+    sleep 2
+    # Force kill any remaining Electrs processes
+    pkill -9 electrs 2>/dev/null || true
+    
+    echo "Stopping other services..."
+    pkill arch-cli || true
+    pkill next || true
     exit 0
+}
+
+# Initial cleanup to ensure clean state
+initial_cleanup() {
+    echo "Performing initial cleanup..."
+    
+    echo "Stopping any running Bitcoin Core..."
+    bitcoin-cli -regtest stop 2>/dev/null || true
+    sleep 2
+    
+    echo "Stopping any running Electrs processes..."
+    pkill electrs || true
+    sleep 2
+    pkill -9 electrs 2>/dev/null || true
+    
+    # Check if port 60401 is still in use
+    if ss -tlnp 2>/dev/null | grep -q ":60401"; then
+        echo "Warning: Port 60401 is still in use by:"
+        ss -tlnp | grep ":60401"
+        echo "Attempting to free up port 60401..."
+        fuser -k 60401/tcp 2>/dev/null || true
+        sleep 2
+    fi
 }
 
 # Trap Ctrl+C to clean up
 trap cleanup INT
+
+# Perform initial cleanup
+initial_cleanup
 
 # Create necessary directories
 mkdir -p .arch-validator
@@ -176,7 +272,7 @@ wait_for_electrs
 # Wait for Electrs RPC with increased timeout
 echo "Waiting for Electrs RPC with increased timeout..."
 ATTEMPTS=0
-MAX_ATTEMPTS=60  # Increased from 30 to 60
+MAX_ATTEMPTS=30  # Reduced back to 30 as we have better diagnostics now
 while ! check_electrs_rpc; do
     ATTEMPTS=$((ATTEMPTS + 1))
     if [ $ATTEMPTS -ge $MAX_ATTEMPTS ]; then
@@ -186,6 +282,8 @@ while ! check_electrs_rpc; do
             echo "Electrs process is still running (PID: $ELECTRS_PID)"
             echo "Checking Electrs logs..."
             tail -n 50 ~/Coding/electrs/electrs.log 2>/dev/null || echo "No log file found"
+            echo "Checking port status..."
+            ss -tlnp 2>/dev/null | grep ":60401" || echo "Port 60401 is not being listened to"
         else
             echo "Electrs process is not running!"
         fi
@@ -197,12 +295,8 @@ done
 
 echo "Electrs RPC is ready!"
 
-# Start Arch validator
-echo "Starting Arch validator..."
-arch-cli validator-start &
-
-# Wait for validator
-wait_for_service 8000 "Arch validator"
+# Start Arch validator and wait for it
+wait_for_validator
 
 # Start frontend development server
 echo "Starting Next.js development server..."
