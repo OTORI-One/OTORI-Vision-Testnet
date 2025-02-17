@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import TokenExplorerModal from './TokenExplorerModal';
-import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
+import { useOVTClient } from '../src/hooks/useOVTClient';
+import { Portfolio } from '../src/hooks/useOVTClient';
 
 interface NAVData {
   name: string;
-  initial: number;
-  current: number;
-  change: number;
+  value: number;      // Initial value in sats
+  current: number;    // Current value in sats
+  change: number;     // Percentage change
   description: string;
 }
 
 interface NAVVisualizationProps {
-  data: NAVData[];
+  data: Portfolio[];
   totalValue: string;
   changePercentage: string;
   baseCurrency?: 'usd' | 'btc';
@@ -21,15 +22,22 @@ interface NAVVisualizationProps {
 const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
     if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
+    if (value >= 1000) return `$${(value / 1000).toFixed(2)}k`;
     return `$${value.toFixed(2)}`;
   } else {
-    // Use real BTC price if available, fallback to mock price
-    const currentBtcPrice = btcPrice || 40000;
-    const sats = Math.floor((value / currentBtcPrice) * 100000000);
-    if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
-    if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
-    if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
+    const sats = Math.floor(value);
+    // For values >= 10M sats (0.1 BTC), display in BTC with 2 decimals
+    if (sats >= 10000000) {
+      return `₿${(sats / 100000000).toFixed(2)}`;
+    }
+    // For values >= 1M sats, use M format
+    if (sats >= 1000000) {
+      return `${(sats / 1000000).toFixed(1)}M sats`;
+    }
+    // For values >= 1000 sats, use k format
+    if (sats >= 1000) {
+      return `${(sats / 1000).toFixed(0)}k sats`;
+    }
     return `${sats} sats`;
   }
 };
@@ -37,9 +45,10 @@ const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btc
 const CustomTooltip = ({ active, payload, label, currency }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
-    const totalValue = data.current;
-    const delta = totalValue - data.initial;
-    const deltaPercentage = ((delta / data.initial) * 100).toFixed(0);
+    const initialValue = data.initial;
+    const growthValue = data.current;
+    const totalValue = data.total;
+    const growthPercentage = ((growthValue / initialValue) * 100).toFixed(0);
 
     return (
       <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
@@ -50,15 +59,15 @@ const CustomTooltip = ({ active, payload, label, currency }: any) => {
             Total: {formatCurrencyValue(totalValue, currency)}
           </p>
           <div className="flex items-center space-x-2">
-            <span className={delta >= 0 ? 'text-green-600' : 'text-red-600'}>
-              {delta >= 0 ? '+' : ''}{formatCurrencyValue(Math.abs(delta), currency)}
+            <span className="text-gray-600">
+              Initial: {formatCurrencyValue(initialValue, currency)}
             </span>
-            <span className={`text-sm ${delta >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              ({delta >= 0 ? '+' : ''}{deltaPercentage}%)
+            <span className={`text-sm ${growthValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ({growthValue >= 0 ? '+' : ''}{growthPercentage}%)
             </span>
           </div>
           <p className="text-sm text-gray-600">
-            Initial: {formatCurrencyValue(data.initial, currency)}
+            Growth: {formatCurrencyValue(growthValue, currency)}
           </p>
         </div>
       </div>
@@ -86,24 +95,42 @@ const getInitialTransaction = (value: number, currency: 'usd' | 'btc' = 'usd') =
 };
 
 export default function NAVVisualization({ data, totalValue, changePercentage, baseCurrency = 'usd' }: NAVVisualizationProps) {
-  const [selectedToken, setSelectedToken] = useState<NAVData | null>(null);
-  const { price: btcPrice } = useBitcoinPrice();
+  const [selectedToken, setSelectedToken] = useState<Portfolio | null>(null);
+  const { formatValue } = useOVTClient();
 
   const formattedData = useMemo(() => {
-    return data.map(item => ({
-      ...item,
-      initial: Number(item.initial.toFixed(2)),
-      current: Number(item.current.toFixed(2)),
-    }));
+    console.log('Formatting data:', data);
+    return data.map(item => {
+      const initial = Number(item.value);
+      const current = Number(item.current);
+      const growth = current - initial;
+      
+      return {
+        ...item,
+        name: item.name,
+        initial,          // Initial investment in sats
+        current: current, // Full current value
+        total: current,   // Total current value
+        change: Number(((growth / initial) * 100).toFixed(1)),
+      };
+    });
   }, [data]);
 
+  // Use the same NAV value from the card
+  const chartNAV = useMemo(() => {
+    console.log('Calculating chart NAV, total value:', totalValue);
+    return totalValue;
+  }, [totalValue]);
+
   const formatYAxis = (value: number) => {
-    return formatCurrencyValue(value, baseCurrency, btcPrice);
+    console.log('Formatting Y axis value:', value, 'in mode:', baseCurrency);
+    return formatValue(value, baseCurrency);
   };
 
   // Calculate the maximum value for proper Y-axis scaling
-  const maxValue = Math.max(...data.map(item => item.current));
+  const maxValue = Math.max(...formattedData.map(item => item.total));
   const yAxisDomain = [0, Math.ceil(maxValue * 1.1)]; // Add 10% padding to the top
+  console.log('Y axis domain:', yAxisDomain);
 
   const handleClick = (data: any, index: number) => {
     console.log('Bar clicked:', data);
@@ -118,7 +145,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">OTORI Net Asset Value - Tracked by $OVT</h2>
         <div className="text-right">
-          <p className="text-2xl font-bold">{totalValue}</p>
+          <p className="text-2xl font-bold">{chartNAV}</p>
           <p className="text-sm text-green-500">{changePercentage}</p>
         </div>
       </div>
@@ -162,7 +189,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
               dataKey="current" 
               stackId="a" 
               fill="#3B82F6" 
-              name="Current" 
+              name="Growth" 
               onClick={handleClick}
               style={{ cursor: 'pointer' }}
             />
@@ -177,22 +204,34 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
         </div>
         <div className="flex items-center">
           <div className="w-3 h-3 bg-blue-600 rounded-sm mr-2" />
-          <span className="text-sm text-gray-600">Current</span>
+          <span className="text-sm text-gray-600">Growth</span>
         </div>
       </div>
 
-      {selectedToken && (
-        <TokenExplorerModal
-          isOpen={!!selectedToken}
-          onClose={() => setSelectedToken(null)}
-          tokenData={{
-            ...selectedToken,
-            address: '0x1234...5678', // Mock address
-            holdings: `${new Intl.NumberFormat('en-US').format(selectedToken.initial)} tokens`,
-            transactions: [getInitialTransaction(selectedToken.initial, baseCurrency)],
-          }}
-        />
-      )}
+      <TokenExplorerModal
+        isOpen={selectedToken !== null}
+        onClose={() => setSelectedToken(null)}
+        tokenData={selectedToken ? {
+          name: selectedToken.name,
+          description: selectedToken.description,
+          initial: selectedToken.value,
+          current: selectedToken.current,
+          change: selectedToken.change,
+          address: '0x1234...5678',
+          holdings: `${new Intl.NumberFormat('en-US').format(selectedToken.tokenAmount)} tokens`,
+          transactions: [getInitialTransaction(selectedToken.value, baseCurrency)],
+        } : {
+          name: '',
+          description: '',
+          initial: 0,
+          current: 0,
+          change: 0,
+          address: '',
+          holdings: '',
+          transactions: []
+        }}
+        baseCurrency={baseCurrency}
+      />
     </div>
   );
 } 

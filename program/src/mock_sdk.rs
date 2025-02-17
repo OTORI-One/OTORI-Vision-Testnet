@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use bitcoin::hashes::{sha256, Hash};
 use std::sync::atomic::{AtomicU64, Ordering};
 use borsh::io::{Error as BorshError, Write as BorshWrite, Read as BorshRead, ErrorKind};
+use bitcoin::{Transaction, Script, ScriptBuf};
 
 // Re-export common types at the root level
 pub use account_info::AccountInfo;
@@ -66,6 +67,54 @@ pub mod account_info {
     use super::*;
     use super::pubkey::Pubkey;
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct UtxoMeta {
+        txid: [u8; 32],
+        vout: u32,
+    }
+
+    impl UtxoMeta {
+        pub fn new(txid: [u8; 32], vout: u32) -> Self {
+            Self { txid, vout }
+        }
+
+        pub fn from_slice(data: &[u8]) -> Self {
+            let mut txid = [0u8; 32];
+            txid.copy_from_slice(&data[0..32]);
+            let vout = u32::from_le_bytes([data[32], data[33], data[34], data[35]]);
+            Self { txid, vout }
+        }
+
+        pub fn txid(&self) -> &[u8; 32] {
+            &self.txid
+        }
+
+        pub fn vout(&self) -> u32 {
+            self.vout
+        }
+    }
+
+    impl BorshSerialize for UtxoMeta {
+        fn serialize<W: BorshWrite>(&self, writer: &mut W) -> Result<(), BorshError> {
+            writer.write_all(&self.txid).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to write txid"))?;
+            writer.write_all(&self.vout.to_le_bytes()).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to write vout"))?;
+            Ok(())
+        }
+    }
+
+    impl BorshDeserialize for UtxoMeta {
+        fn deserialize_reader<R: BorshRead>(reader: &mut R) -> Result<Self, BorshError> {
+            let mut txid = [0u8; 32];
+            reader.read_exact(&mut txid).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to read txid"))?;
+            
+            let mut vout_bytes = [0u8; 4];
+            reader.read_exact(&mut vout_bytes).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to read vout"))?;
+            let vout = u32::from_le_bytes(vout_bytes);
+            
+            Ok(Self { txid, vout })
+        }
+    }
+
     #[derive(Debug)]
     pub struct AccountInfo {
         pub key: Pubkey,
@@ -74,6 +123,7 @@ pub mod account_info {
         pub lamports: RefCell<u64>,
         pub data: RefCell<Vec<u8>>,
         pub owner: RefCell<Pubkey>,
+        pub utxo: UtxoMeta,  // Add UTXO field
     }
 
     impl Clone for AccountInfo {
@@ -82,9 +132,10 @@ pub mod account_info {
                 key: self.key,
                 is_signer: self.is_signer,
                 is_writable: self.is_writable,
-                lamports: RefCell::clone(&self.lamports),  // Share the same RefCell
-                data: RefCell::clone(&self.data),          // Share the same RefCell
-                owner: RefCell::clone(&self.owner),        // Share the same RefCell
+                lamports: RefCell::clone(&self.lamports),
+                data: RefCell::clone(&self.data),
+                owner: RefCell::clone(&self.owner),
+                utxo: self.utxo,
             }
         }
     }
@@ -98,6 +149,7 @@ pub mod account_info {
                 lamports: RefCell::new(0),
                 data: RefCell::new(Vec::new()),
                 owner: RefCell::new(Pubkey::new()),
+                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
             }
         }
 
@@ -127,6 +179,7 @@ pub mod program {
     use super::*;
     use super::account_info::AccountInfo;
     use super::pubkey::Pubkey;
+    use bitcoin::{Script, ScriptBuf};
 
     pub trait Program {
         fn process_instruction(ctx: &ProgramContext, data: &[u8]) -> ProgramResult;
@@ -195,6 +248,27 @@ pub mod program {
                 .unwrap_or(false)
         }
     }
+
+    pub fn get_account_script_pubkey(pubkey: &Pubkey) -> ScriptBuf {
+        // Create a P2PKH script using the pubkey
+        let mut script_data = Vec::with_capacity(25);
+        script_data.extend_from_slice(&[0x76, 0xa9, 0x14]); // OP_DUP OP_HASH160 PUSH20
+        script_data.extend_from_slice(&pubkey.0[..20]); // Use first 20 bytes of pubkey as hash
+        script_data.extend_from_slice(&[0x88, 0xac]); // OP_EQUALVERIFY OP_CHECKSIG
+        ScriptBuf::from_bytes(script_data)
+    }
+
+    pub fn get_bitcoin_block_height() -> u32 {
+        // Mock implementation - in real environment this would query the Bitcoin network
+        123456
+    }
+
+    pub fn set_transaction_to_sign(accounts: &[AccountInfo], tx_to_sign: TransactionToSign) -> ProgramResult {
+        // Mock implementation of transaction signing
+        // In real environment, this would prepare the transaction for signing
+        msg!("Setting transaction to sign: {:?}", tx_to_sign);
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -257,6 +331,7 @@ pub mod test_utils {
     use super::account_info::AccountInfo;
     use super::pubkey::Pubkey;
     use super::program::{Program, ProgramContext};
+    use bitcoin::Transaction;
 
     #[derive(Debug, Clone)]
     pub struct AccountHandle {
@@ -302,6 +377,7 @@ pub mod test_utils {
                 lamports: RefCell::new(0),
                 data: RefCell::new(vec![0; 1024]), // Allocate 1KB of space by default
                 owner: RefCell::new(program_id),
+                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
             };
             self.accounts.lock().unwrap().insert(key, account);
             Ok(AccountHandle {
@@ -324,6 +400,7 @@ pub mod test_utils {
                 lamports: RefCell::new(1000000),
                 data: RefCell::new(Vec::new()),
                 owner: RefCell::new(Pubkey::new()),
+                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
             };
             self.accounts.lock().unwrap().insert(key, account);
             self.admin_accounts.lock().unwrap().insert(key, true);
@@ -431,6 +508,7 @@ pub mod test_utils {
                     lamports: account.lamports.clone(),  // Share the same RefCell
                     data: account.data.clone(),          // Share the same RefCell
                     owner: account.owner.clone(),        // Share the same RefCell
+                    utxo: account.utxo,
                 };
                 
                 ctx_accounts.push(account_info);
@@ -451,6 +529,7 @@ pub mod test_utils {
                         *account.lamports.borrow_mut() = *account_info.lamports.borrow();
                         account.data.borrow_mut().clone_from(&account_info.data.borrow());
                         *account.owner.borrow_mut() = *account_info.owner.borrow();
+                        *account.utxo = account_info.utxo;
                     }
                 }
             }
@@ -462,6 +541,41 @@ pub mod test_utils {
             self.accounts.lock().unwrap().get(pubkey)
                 .ok_or(ProgramError::AccountNotFound)?
                 .get_data()
+        }
+
+        pub fn create_bitcoin_transaction(&self, inputs: Vec<bitcoin::TxIn>, outputs: Vec<bitcoin::TxOut>) -> Transaction {
+            Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: inputs,
+                output: outputs,
+            }
+        }
+
+        pub fn create_utxo(&self, txid: [u8; 32], vout: u32) -> UtxoMeta {
+            UtxoMeta::new(txid, vout)
+        }
+
+        pub fn set_account_utxo(&mut self, pubkey: &Pubkey, utxo: UtxoMeta) -> Result<(), ProgramError> {
+            if let Some(account) = self.accounts.lock().unwrap().get_mut(pubkey) {
+                account.utxo = utxo;
+                Ok(())
+            } else {
+                Err(ProgramError::AccountNotFound)
+            }
+        }
+
+        pub fn get_account_utxo(&self, pubkey: &Pubkey) -> Result<UtxoMeta, ProgramError> {
+            if let Some(account) = self.accounts.lock().unwrap().get(pubkey) {
+                Ok(account.utxo)
+            } else {
+                Err(ProgramError::AccountNotFound)
+            }
+        }
+
+        pub fn simulate_bitcoin_block_height(&self) -> u32 {
+            // Mock implementation that could be customized for testing
+            123456
         }
     }
 }
@@ -490,4 +604,36 @@ macro_rules! entrypoint {
             $process_instruction(&context, instruction_data)
         }
     };
+}
+
+pub mod helper {
+    use super::*;
+    use bitcoin::Transaction;
+    use crate::account_info::AccountInfo;
+
+    pub fn add_state_transition(tx: &mut Transaction, account: &AccountInfo) -> Result<(), ProgramError> {
+        // In mock environment, we'll simulate state transition by creating a dummy output
+        let script_pubkey = get_account_script_pubkey(&account.key);
+        
+        // Create a new output with the account's script_pubkey
+        let output = bitcoin::TxOut {
+            value: account.lamports.borrow().saturating_add(1), // Simulate value transfer
+            script_pubkey: script_pubkey,
+        };
+        
+        tx.output.push(output);
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct TransactionToSign<'a> {
+    pub tx_bytes: &'a [u8],
+    pub inputs_to_sign: &'a [InputToSign],
+}
+
+#[derive(Debug)]
+pub struct InputToSign {
+    pub index: usize,
+    pub signer: Pubkey,
 } 

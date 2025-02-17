@@ -19,7 +19,7 @@ interface Transaction {
 export default function TransactionHistory() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<string>('all');
-  const { getTransactionHistory, isLoading, error } = useOVTClient();
+  const { getTransactionHistory, isLoading, error, formatValue } = useOVTClient();
 
   useEffect(() => {
     const fetchTransactions = async () => {
@@ -61,9 +61,8 @@ export default function TransactionHistory() {
 
   const formatAmount = (tx: Transaction) => {
     if (tx.type === 'position_entry') {
-      // For position entries, show the currency spent (BTC or USD)
-      const currencySymbol = tx.details.currency === 'BTC' ? '₿' : '$';
-      return `${currencySymbol}${tx.amount.toLocaleString()}`;
+      // For position entries, format BTC value
+      return formatValue(tx.amount, 'btc');
     }
     // For other transactions, show OVT amount
     return `${tx.amount.toLocaleString()} OVT`;
@@ -93,7 +92,7 @@ export default function TransactionHistory() {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         {isLoading ? (
           <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div data-testid="loading-spinner" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         ) : error ? (
           <div className="p-4 text-red-600 bg-red-50">{error}</div>

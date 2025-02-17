@@ -1,0 +1,16 @@
+{
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest",
+    "populate-positions": "ts-node scripts/populate-initial-positions.ts",
+    "mint-ovt": "ts-node ovt-fund/scripts/mint-initial-ovt.ts"
+  }
+}

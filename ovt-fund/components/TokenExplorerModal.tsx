@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { XMarkIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline';
-import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
+import { useOVTClient } from '../src/hooks/useOVTClient';
 
 interface TokenExplorerModalProps {
   isOpen: boolean;
@@ -25,22 +25,9 @@ interface TokenExplorerModalProps {
 }
 
 export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCurrency = 'usd' }: TokenExplorerModalProps) {
-  const { price: btcPrice } = useBitcoinPrice();
+  const { formatValue } = useOVTClient();
   const profitLoss = tokenData.current - tokenData.initial;
   const profitLossPercentage = ((profitLoss / tokenData.initial) * 100).toFixed(2);
-
-  const formatCurrency = (value: number) => {
-    if (baseCurrency === 'usd') {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
-    } else {
-      const currentBtcPrice = btcPrice || 40000;
-      const sats = Math.floor((value / currentBtcPrice) * 100000000);
-      if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
-      if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
-      if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
-      return `${sats} sats`;
-    }
-  };
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -114,7 +101,7 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
                           {profitLoss >= 0 ? '+' : ''}{profitLossPercentage}%
                         </p>
                         <p className={`text-sm ${profitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatCurrency(profitLoss)}
+                          {formatValue(profitLoss, baseCurrency)}
                         </p>
                       </div>
                     </div>

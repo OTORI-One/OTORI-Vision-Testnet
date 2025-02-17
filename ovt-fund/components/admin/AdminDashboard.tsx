@@ -17,7 +17,7 @@ export default function AdminDashboard() {
   const [activeView, setActiveView] = useState<AdminView>(AdminView.POSITIONS);
   const [isMultiSigModalOpen, setIsMultiSigModalOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
-  const { isLoading, error } = useOVTClient();
+  const { isLoading, error, navData, formatValue } = useOVTClient();
   const { address } = useLaserEyes();
 
   // Check if current wallet is an admin
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Admin Navigation */}
       <div className="bg-white shadow rounded-lg p-4">
         <nav className="flex space-x-4">
@@ -95,7 +95,7 @@ export default function AdminDashboard() {
       <div className="bg-white shadow rounded-lg p-6">
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <div data-testid="loading-spinner" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           </div>
         )}
 

@@ -16,53 +16,41 @@ interface MultiSigApprovalProps {
 
 export default function MultiSigApproval({ isOpen, onClose, onComplete, action }: MultiSigApprovalProps) {
   const [signatures, setSignatures] = useState<string[]>([]);
-  const [connectedAdmins, setConnectedAdmins] = useState<string[]>([]);
+  const [signedAdmins, setSignedAdmins] = useState<string[]>([]);
   const [isSigningInProgress, setIsSigningInProgress] = useState(false);
   const { connect, disconnect, address, signMessage } = useLaserEyes();
-
-  // TODO: Add validation to prevent the same admin from signing multiple times
-  // 1. Store admin addresses with their signatures
-  // 2. Check if current admin has already signed
-  // 3. Prevent duplicate signatures from the same admin wallet
 
   useEffect(() => {
     if (!isOpen) {
       setSignatures([]);
-      setConnectedAdmins([]);
+      setSignedAdmins([]);
     }
   }, [isOpen]);
 
   const handleConnect = async () => {
     try {
       await connect(XVERSE);
-      if (address && !connectedAdmins.includes(address)) {
-        setConnectedAdmins([...connectedAdmins, address]);
-      }
     } catch (err) {
       console.error('Failed to connect wallet:', err);
     }
   };
 
   const handleSign = async () => {
-    if (!action || !address) return;
+    if (!action || !address || signedAdmins.includes(address)) return;
 
     setIsSigningInProgress(true);
     try {
-      // Create message to sign
       const message = JSON.stringify({
         type: action.type,
         data: action.data,
         timestamp: Date.now(),
+        signer: address,
       });
 
-      // Sign the message
       const signature = await signMessage(message);
       
-      // Add signature if not already present
-      if (!signatures.includes(signature)) {
-        const newSignatures = [...signatures, signature];
-        setSignatures(newSignatures);
-      }
+      setSignatures(prev => [...prev, signature]);
+      setSignedAdmins(prev => [...prev, address]);
     } catch (err) {
       console.error('Failed to sign message:', err);
     } finally {
@@ -70,11 +58,8 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
     }
   };
 
-  const handleComplete = () => {
-    if (signatures.length >= 3) {
-      onComplete(signatures);
-    }
-  };
+  const canSign = address && !signedAdmins.includes(address) && signatures.length < 3;
+  const canComplete = signatures.length >= 3;
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -174,11 +159,11 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
                 </div>
 
                 <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                  {signatures.length >= 3 ? (
+                  {canComplete ? (
                     <button
                       type="button"
                       className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 sm:ml-3 sm:w-auto"
-                      onClick={handleComplete}
+                      onClick={() => onComplete(signatures)}
                     >
                       Complete Transaction
                     </button>
@@ -195,9 +180,9 @@ export default function MultiSigApproval({ isOpen, onClose, onComplete, action }
                       type="button"
                       className="inline-flex w-full justify-center rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-50 sm:ml-3 sm:w-auto"
                       onClick={handleSign}
-                      disabled={isSigningInProgress || signatures.length >= 3}
+                      disabled={!canSign || isSigningInProgress}
                     >
-                      {isSigningInProgress ? 'Signing...' : 'Sign'}
+                      {isSigningInProgress ? 'Signing...' : signedAdmins.includes(address) ? 'Already Signed' : 'Sign'}
                     </button>
                   )}
                   <button

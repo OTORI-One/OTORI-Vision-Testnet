@@ -1,6 +1,31 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import NAVVisualization from '../NAVVisualization';
 
+// Mock Recharts to avoid ResponsiveContainer issues in tests
+jest.mock('recharts', () => ({
+  ResponsiveContainer: ({ children }: any) => children,
+  BarChart: ({ children, onClick }: any) => <div data-testid="bar-chart">{children}</div>,
+  Bar: ({ dataKey, name, onClick }: any) => (
+    <button 
+      data-testid={`bar-${dataKey}`} 
+      aria-label={name}
+      onClick={() => onClick({
+        name: 'Test Project',
+        initial: 1000000,
+        current: 2000000,
+        change: 100,
+        description: 'Test Description'
+      })}
+    >
+      {name}
+    </button>
+  ),
+  XAxis: () => null,
+  YAxis: () => null,
+  CartesianGrid: () => null,
+  Tooltip: () => null,
+}));
+
 const mockData = [
   {
     name: 'Test Project',
@@ -11,13 +36,8 @@ const mockData = [
   }
 ];
 
-jest.mock('../src/hooks/useBitcoinPrice', () => ({
-  useBitcoinPrice: () => ({
-    price: 40000,
-    loading: false,
-    error: null
-  })
-}));
+// The mock is now handled globally in jest.setup.js
+// No need to mock here as it's already mocked
 
 describe('NAVVisualization', () => {
   const defaultProps = {
@@ -40,13 +60,15 @@ describe('NAVVisualization', () => {
 
   it('shows project data in chart', () => {
     render(<NAVVisualization {...defaultProps} />);
-    expect(screen.getByText('Test Project')).toBeInTheDocument();
+    expect(screen.getByTestId('bar-chart')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Initial' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Current' })).toBeInTheDocument();
   });
 
   it('opens TokenExplorerModal on bar click', async () => {
     render(<NAVVisualization {...defaultProps} />);
-    const bar = screen.getByRole('button', { name: /Test Project/i });
-    fireEvent.click(bar);
+    const initialBar = screen.getByRole('button', { name: 'Initial' });
+    fireEvent.click(initialBar);
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 }); 

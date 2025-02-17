@@ -1,16 +1,24 @@
 import { useState, useCallback, useEffect } from 'react';
 import { ArchClient } from '../lib/archClient';
+import { useBitcoinPrice } from '../hooks/useBitcoinPrice';
 
-interface Portfolio {
+// Constants for numeric handling
+const SATS_PER_BTC = 100000000;
+
+export interface Portfolio {
   name: string;
-  value: number;
-  current: number;
-  change: number;
+  value: number;      // in sats
+  current: number;    // in sats
+  change: number;     // percentage
   description: string;
+  transactionId?: string;  // Reference to the position entry transaction
+  tokenAmount: number;     // Number of tokens
+  pricePerToken: number;   // Price per token in sats
 }
 
 interface NAVData {
-  totalValue: string;
+  totalValue: string;         // Formatted string for display
+  totalValueSats: number;     // Raw value in sats
   changePercentage: string;
   portfolioItems: Portfolio[];
 }
@@ -29,113 +37,188 @@ interface Transaction {
   };
 }
 
+// Update ArchClient interface to include required methods
+interface ArchClientResponse {
+  portfolioItems: Portfolio[];
+}
+
+// Extend ArchClient type
+interface ArchClientType {
+  getCurrentNAV(): Promise<ArchClientResponse>;
+  addPosition(position: Portfolio): Promise<Portfolio>;
+}
+
 // Initialize the Arch client
-const archClient = new ArchClient({
+const archClient: ArchClientType = new ArchClient({
   programId: process.env.NEXT_PUBLIC_PROGRAM_ID || '',
   treasuryAddress: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '',
   endpoint: process.env.NEXT_PUBLIC_ARCH_ENDPOINT || 'http://localhost:8000',
 });
 
-// Mock initial portfolio data
-const INITIAL_PORTFOLIO_ITEMS = [
-  {
-    name: 'Polymorphic Labs',
-    value: 500000000, // Initial 500M sats
-    current: 2600000000, // 2.6B sats (₿26.00)
-    change: 420,
-    description: 'Encryption Layer'
-  },
-  {
-    name: 'VoltFi',
-    value: 150000000, // Initial 150M sats
-    current: 525000000, // 525M sats
-    change: 250,
-    description: 'Bitcoin Volatility Index on Bitcoin'
-  },
-  {
-    name: 'MIXDTape',
-    value: 100000000, // Initial 100M sats
-    current: 250000000, // 250M sats
-    change: 150,
-    description: 'Phygital Music for superfans - disrupting Streaming'
+// Helper function to format values consistently
+const formatValue = (sats: number, displayMode: 'btc' | 'usd' = 'btc', btcPrice?: number | null): string => {
+  if (displayMode === 'usd' && btcPrice) {
+    const usdValue = (sats / SATS_PER_BTC) * btcPrice;
+    // USD formatting
+    if (usdValue >= 1000000) {
+      return `$${(usdValue / 1000000).toFixed(2)}M`;
+    }
+    if (usdValue >= 1000) {
+      return `$${(usdValue / 1000).toFixed(2)}k`;
+    }
+    return `$${usdValue.toFixed(2)}`;
   }
-];
 
-// Mock transaction data
-const MOCK_TRANSACTIONS: Transaction[] = [
-  {
-    txid: 'mock_tx_1',
-    type: 'mint',
-    amount: 1000000,
-    timestamp: Date.now() - 86400000, // 1 day ago
-    status: 'confirmed',
-    details: {
-      reason: 'Initial token distribution',
-      signatures: ['sig1', 'sig2', 'sig3']
-    }
-  },
-  {
-    txid: 'mock_tx_2',
-    type: 'position_entry',
-    amount: 5.25, // 5.25 BTC
-    timestamp: Date.now() - 43200000, // 12 hours ago
-    status: 'confirmed',
-    details: {
-      position: 'Polymorphic Labs',
-      signatures: ['sig1', 'sig2', 'sig3'],
-      currency: 'BTC'
-    }
-  },
-  {
-    txid: 'mock_tx_3',
-    type: 'position_entry',
-    amount: 150000, // $150,000 USD
-    timestamp: Date.now() - 21600000, // 6 hours ago
-    status: 'confirmed',
-    details: {
-      position: 'VoltFi',
-      signatures: ['sig1', 'sig2', 'sig3'],
-      currency: 'USD'
-    }
+  // BTC display mode
+  const btcValue = sats / SATS_PER_BTC;
+  if (sats >= 10000000) { // 0.1 BTC or more
+    return `₿${btcValue.toFixed(2)}`;
   }
-];
+  if (sats >= 1000000) {
+    return `${(sats / 1000000).toFixed(1)}M sats`;
+  }
+  if (sats >= 1000) {
+    return `${(sats / 1000).toFixed(0)}k sats`;
+  }
+  return `${sats} sats`;
+};
 
-// Simulate portfolio value changes
-function simulatePortfolioChange(items: Portfolio[]): Portfolio[] {
-  return items.map(item => ({
-    ...item,
-    current: item.current * (1 + (Math.random() * 0.02 - 0.01)), // Random -1% to +1% change in current value
-    change: Number(((item.current / item.value - 1) * 100).toFixed(1)), // Recalculate change percentage
-  }));
+// Import mock data
+import mockPortfolioData from '../mock-data/portfolio-positions.json';
+import mockTokenData from '../mock-data/token-data.json';
+
+// Store positions in memory for development
+let portfolioPositions: Portfolio[] = [];
+
+// Store transactions in memory for development
+let mockTransactions: Transaction[] = [];
+
+// Load initial positions from JSON file in mock mode
+if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
+  try {
+    console.log('Mock mode enabled, loading portfolio positions...');
+    portfolioPositions = mockPortfolioData;
+    
+    // Create transaction entries for each position
+    mockTransactions = portfolioPositions.map(position => ({
+      txid: position.transactionId || `position_${Date.now()}`,
+      type: 'position_entry',
+      amount: position.value,
+      timestamp: Date.now(),
+      status: 'confirmed',
+      details: {
+        position: position.name,
+        currency: 'BTC'
+      }
+    }));
+
+    // Add OVT mint transaction if it exists
+    if (mockTokenData && mockTokenData.transactions) {
+      mockTransactions.push(...mockTokenData.transactions);
+    }
+
+    console.log('Loaded portfolio positions:', portfolioPositions);
+    console.log('Created mock transactions:', mockTransactions);
+  } catch (err) {
+    console.warn('Failed to load mock portfolio positions:', err);
+    portfolioPositions = [];
+    mockTransactions = [];
+  }
+} else {
+  console.log('Mock mode not enabled. NEXT_PUBLIC_MOCK_MODE =', process.env.NEXT_PUBLIC_MOCK_MODE);
 }
 
 export function useOVTClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [navData, setNavData] = useState<NAVData>({
-    totalValue: '₿33.75', // Total of all current values (26 + 5.25 + 2.5)
-    changePercentage: '+302%',
-    portfolioItems: INITIAL_PORTFOLIO_ITEMS
-  });
+  const { price: btcPrice } = useBitcoinPrice();
+  const [navData, setNavData] = useState<NAVData>(() => ({
+    totalValue: '₿0.00',
+    totalValueSats: 0,
+    changePercentage: '+0%',
+    portfolioItems: []
+  }));
+
+  // Get transaction history
+  const getTransactionHistory = useCallback(async () => {
+    if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
+      return mockTransactions;
+    }
+    // In production, this would fetch from Arch Network
+    return [];
+  }, []);
 
   // Fetch NAV data periodically
   useEffect(() => {
     const fetchNAV = async () => {
       try {
+        // In development, use the in-memory positions
+        if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
+          console.log('Fetching NAV in mock mode');
+          console.log('Current portfolio positions:', portfolioPositions);
+          
+          // Calculate totals in sats (excluding OVT mint)
+          const totalValueSats = portfolioPositions.reduce((sum, item) => {
+            console.log(`Adding ${item.name} value: ${item.current} sats`);
+            return sum + item.current;
+          }, 0);
+          
+          const totalInitialSats = portfolioPositions.reduce((sum, item) => {
+            console.log(`Adding ${item.name} initial: ${item.value} sats`);
+            return sum + item.value;
+          }, 0);
+
+          console.log('Total value in sats:', totalValueSats, '=', totalValueSats / SATS_PER_BTC, 'BTC');
+          console.log('Total initial in sats:', totalInitialSats, '=', totalInitialSats / SATS_PER_BTC, 'BTC');
+          
+          const changePercentage = totalInitialSats > 0 ? 
+            ((totalValueSats - totalInitialSats) / totalInitialSats) * 100 : 0;
+
+          // Update current values and changes for each position
+          const updatedPositions = portfolioPositions.map(position => ({
+            ...position,
+            current: position.value, // For now, current equals initial
+            change: 0 // For now, no change
+          }));
+
+          const formattedTotal = formatValue(totalValueSats, 'btc');
+          console.log('Formatted total:', formattedTotal);
+          
+          const newNavData = {
+            totalValue: formattedTotal,
+            totalValueSats,
+            changePercentage: `+${changePercentage.toFixed(0)}%`,
+            portfolioItems: updatedPositions
+          };
+          
+          console.log('Setting new NAV data:', newNavData);
+          setNavData(newNavData);
+          return;
+        }
+
+        // In production, fetch from Arch Network
+        console.log('Fetching NAV from Arch Network');
         const nav = await archClient.getCurrentNAV();
-        const totalValue = nav.value;
-        const averageChange = nav.portfolioItems.reduce((sum, item) => sum + item.change, 0) / nav.portfolioItems.length;
+        const portfolioItems = nav.portfolioItems.map(item => ({
+          name: item.name,
+          value: item.value,
+          current: item.current,
+          change: item.change,
+          description: item.description,
+          transactionId: item.transactionId,
+          tokenAmount: item.tokenAmount,
+          pricePerToken: item.pricePerToken
+        }));
+
+        const totalValueSats = portfolioItems.reduce((sum, item) => sum + item.current, 0);
+        const totalInitialSats = portfolioItems.reduce((sum, item) => sum + item.value, 0);
+        const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
         
         setNavData({
-          totalValue: `₿${(totalValue / 100000000).toFixed(2)}`, // Convert sats to BTC
-          changePercentage: `${averageChange >= 0 ? '+' : ''}${averageChange.toFixed(1)}%`,
-          portfolioItems: nav.portfolioItems.map(item => ({
-            name: item.name,
-            value: item.value,
-            current: item.value * (1 + item.change / 100),
-            change: item.change,
-            description: getProjectDescription(item.name),
-          }))
+          totalValue: formatValue(totalValueSats, 'btc'),
+          totalValueSats,
+          changePercentage: `+${changePercentage.toFixed(0)}%`,
+          portfolioItems
         });
       } catch (err) {
         console.error('Failed to fetch NAV:', err);
@@ -148,91 +231,33 @@ export function useOVTClient() {
     return () => clearInterval(interval);
   }, []);
 
-  const getTransactionHistory = useCallback(async (): Promise<Transaction[]> => {
+  // Add position entry
+  const addPosition = useCallback(async (position: Omit<Portfolio, 'current' | 'change'>) => {
+    const newPosition: Portfolio = {
+      ...position,
+      current: position.value, // Initially, current value equals initial value
+      change: 0
+    };
+
     if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
-      return MOCK_TRANSACTIONS;
+      portfolioPositions.push(newPosition);
+      return newPosition;
     }
 
-    try {
-      const history = await archClient.getTransactionHistory('all');
-      return history.map(tx => ({
-        txid: tx.txid,
-        type: mapTransactionType(tx.type),
-        amount: tx.amount,
-        timestamp: tx.timestamp,
-        status: mapTransactionStatus(tx.confirmations),
-        details: tx.metadata || {}
-      }));
-    } catch (err) {
-      console.error('Failed to fetch transaction history:', err);
-      throw err;
-    }
-  }, []);
-
-  // Helper function to map transaction types
-  const mapTransactionType = (type: 'MINT' | 'BURN' | 'TRANSFER' | 'POSITION_ENTRY' | 'POSITION_EXIT'): Transaction['type'] => {
-    switch (type) {
-      case 'MINT': return 'mint';
-      case 'BURN': return 'burn';
-      case 'TRANSFER': return 'transfer';
-      case 'POSITION_ENTRY': return 'position_entry';
-      case 'POSITION_EXIT': return 'position_exit';
-    }
-  };
-
-  // Helper function to map transaction status based on confirmations
-  const mapTransactionStatus = (confirmations: number): 'pending' | 'confirmed' | 'failed' => {
-    if (confirmations === 0) return 'pending';
-    if (confirmations < 0) return 'failed';
-    return 'confirmed';
-  };
-
-  const buyOVT = useCallback(async (amount: number) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // In a real implementation, we would:
-      // 1. Get the connected wallet address
-      // 2. Wait for the Bitcoin payment transaction
-      // 3. Use the payment txid to verify and complete the purchase
-      const mockPaymentTxid = 'mock_txid_' + Date.now();
-      const result = await archClient.buyOVT(amount, mockPaymentTxid, 'mock_wallet_address');
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to buy OVT');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to buy OVT');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const sellOVT = useCallback(async (amount: number) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await archClient.sellOVT(amount, 'mock_wallet_address');
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to sell OVT');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sell OVT');
-      throw err;
-    } finally {
-      setIsLoading(false);
-    }
+    // In production, this would be stored on-chain
+    return await archClient.addPosition(newPosition);
   }, []);
 
   return {
     isLoading,
     error,
     navData,
-    buyOVT,
-    sellOVT,
-    getTransactionHistory,
+    btcPrice,
+    formatValue: (sats: number, displayMode: 'btc' | 'usd' = 'btc') => 
+      formatValue(sats, displayMode, btcPrice),
+    addPosition,
+    getPositions: () => portfolioPositions,
+    getTransactionHistory
   };
 }
 

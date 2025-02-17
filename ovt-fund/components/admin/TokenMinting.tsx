@@ -10,15 +10,29 @@ export default function TokenMinting({ onActionRequiringMultiSig }: TokenMinting
   const [reason, setReason] = useState<string>('');
   const { isLoading } = useOVTClient();
 
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Ensure positive numbers only
+    if (parseFloat(value) > 0 || value === '') {
+      setAmount(value);
+    }
+  };
+
+  const isFormValid = () => {
+    return amount && parseFloat(amount) > 0 && reason.trim().length > 0 && !isLoading;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!isFormValid()) return;
+
     const action = {
       type: 'MINT_TOKENS',
       description: `Mint ${amount} OTORI VISION TOKEN - Reason: ${reason}`,
       data: {
         amount: parseFloat(amount),
-        reason,
+        reason: reason.trim(),
         symbol: 'OTORI·VISION·TOKEN',
         timestamp: Date.now(),
       },
@@ -53,7 +67,7 @@ export default function TokenMinting({ onActionRequiringMultiSig }: TokenMinting
               min="1"
               step="1"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={handleAmountChange}
               className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
               placeholder="Enter amount"
             />
@@ -81,7 +95,7 @@ export default function TokenMinting({ onActionRequiringMultiSig }: TokenMinting
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={isLoading || !amount || !reason}
+            disabled={!isFormValid()}
             className="inline-flex justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
           >
             {isLoading ? 'Processing...' : 'Mint Tokens'}

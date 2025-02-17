@@ -1,9 +1,17 @@
+/// Test suite for OVT program functionality
+/// 
+/// This test suite verifies:
+/// 1. Program initialization with multi-signature support
+/// 2. NAV updates and validation
+/// 3. UTXO handling and state transitions
+/// 4. Admin operations and access control
 use ovt_program::{
     mock_sdk::{
         AccountInfo,
         Pubkey,
         test_utils::TestClient,
         AccountMeta,
+        account_info::UtxoMeta,
     },
     OVTInstruction,
     OVTState,
@@ -11,6 +19,13 @@ use ovt_program::{
 use std::cell::RefCell;
 use borsh::BorshSerialize;
 
+/// Test program initialization with proper UTXO handling
+/// 
+/// Verifies:
+/// - Proper account initialization
+/// - Multi-signature requirements
+/// - Default UTXO state
+/// - Admin account setup
 #[test]
 fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = TestClient::new();
@@ -25,6 +40,23 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
     
     // Create state account with enough space for OVTState
     let state_account = client.create_account(program_id)?;
+    
+    // Verify default UTXO state
+    let default_utxo = client.get_account_utxo(&state_account.key)?;
+    assert_eq!(default_utxo, UtxoMeta::from_slice(&[0; 36]), "Default UTXO should be zero-initialized");
+
+    // Create test UTXO and set it
+    let test_txid = [1u8; 32];
+    let test_vout = 1u32;
+    let test_utxo = client.create_utxo(test_txid, test_vout);
+    client.set_account_utxo(&state_account.key, test_utxo)?;
+
+    // Verify UTXO was set correctly
+    let stored_utxo = client.get_account_utxo(&state_account.key)?;
+    assert_eq!(stored_utxo.txid(), &test_txid, "UTXO txid mismatch");
+    assert_eq!(stored_utxo.vout(), test_vout, "UTXO vout mismatch");
+
+    // Create state account with enough space for OVTState
     {
         let mut accounts = client.accounts.lock().unwrap();
         let account = accounts.get_mut(&state_account.key).unwrap();
@@ -101,6 +133,13 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Test NAV updates with UTXO state tracking
+/// 
+/// Verifies:
+/// - NAV update process
+/// - UTXO state transitions
+/// - Multi-signature requirements for updates
+/// - State persistence
 #[test]
 fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = TestClient::new();
@@ -113,9 +152,19 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
         admin_accounts.push(client.create_admin_account(program_id)?);
     }
     
-    // Create state account
+    // Create state account and verify UTXO handling
     let state_account = client.create_account(program_id)?;
     
+    // Set and verify a test UTXO
+    let test_txid = [2u8; 32];
+    let test_vout = 2u32;
+    let test_utxo = client.create_utxo(test_txid, test_vout);
+    client.set_account_utxo(&state_account.key, test_utxo)?;
+    
+    let stored_utxo = client.get_account_utxo(&state_account.key)?;
+    assert_eq!(stored_utxo.txid(), &test_txid, "UTXO txid mismatch in NAV update test");
+    assert_eq!(stored_utxo.vout(), test_vout, "UTXO vout mismatch in NAV update test");
+
     // Initialize account data structure properly
     {
         let mut accounts = client.accounts.lock().unwrap();
@@ -218,6 +267,12 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Test NAV validation with UTXO state verification
+/// 
+/// Verifies:
+/// - NAV validation rules
+/// - UTXO state consistency
+/// - State transitions during validation
 #[test]
 fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = TestClient::new();
@@ -230,8 +285,21 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
         admin_accounts.push(client.create_admin_account(program_id)?);
     }
     
-    // Create state account with enough space for OVTState
+    // Create state account and verify UTXO handling
     let state_account = client.create_account(program_id)?;
+    
+    // Set and verify a test UTXO for validation
+    let test_txid = [3u8; 32];
+    let test_vout = 3u32;
+    let test_utxo = client.create_utxo(test_txid, test_vout);
+    client.set_account_utxo(&state_account.key, test_utxo)?;
+    
+    // Verify UTXO state before validation
+    let stored_utxo = client.get_account_utxo(&state_account.key)?;
+    assert_eq!(stored_utxo.txid(), &test_txid, "UTXO txid mismatch in validation test");
+    assert_eq!(stored_utxo.vout(), test_vout, "UTXO vout mismatch in validation test");
+
+    // Initialize account data structure properly
     {
         let mut accounts = client.accounts.lock().unwrap();
         let account = accounts.get_mut(&state_account.key).unwrap();

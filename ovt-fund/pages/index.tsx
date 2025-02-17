@@ -129,7 +129,7 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-lg font-semibold text-gray-700">Net Asset Value</h2>
             <div className="mt-2">
-              <p className="text-3xl font-bold">{formatCurrency(parseFloat(navData.totalValue.replace(/[^0-9.]/g, '')) * 1000000)}</p>
+              <p className="text-3xl font-bold">{navData.totalValue}</p>
               <p className="text-sm text-green-600 flex items-center">
                 <ArrowUpIcon className="h-4 w-4 mr-1" />
                 {navData.changePercentage}
@@ -228,14 +228,8 @@ export default function Dashboard() {
               />
             ) : (
               <NAVVisualization 
-                data={navData.portfolioItems.map(item => ({
-                  name: item.name,
-                  initial: item.value,
-                  current: item.current,
-                  change: item.change,
-                  description: item.description
-                }))}
-                totalValue={formatCurrency(parseFloat(navData.totalValue.replace(/[^0-9.]/g, '')) * 1000000)}
+                data={navData.portfolioItems}
+                totalValue={navData.totalValue}
                 changePercentage={navData.changePercentage}
                 baseCurrency={baseCurrency}
               />

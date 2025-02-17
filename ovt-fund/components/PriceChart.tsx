@@ -7,7 +7,7 @@ interface PriceData {
 }
 
 interface PriceChartProps {
-  data: PriceData[];
+  data?: PriceData[];
   baseCurrency?: 'usd' | 'btc';
 }
 

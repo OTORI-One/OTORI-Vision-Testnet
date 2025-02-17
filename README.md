@@ -116,10 +116,21 @@ NEXT_PUBLIC_ARCH_ENDPOINT=http://localhost:8000
 NEXT_PUBLIC_MOCK_MODE=true
 ```
 
-2. Run the development server:
+2. Initialize mock data:
+```bash
+# Populate initial portfolio positions
+npm run populate-positions
+
+# Mint initial OVT tokens
+npm run mint-ovt
+```
+
+3. Run the development server:
 ```bash
 npm run dev
 ```
+
+Note: Mock data will be stored in `ovt-fund/src/mock-data/`. This data should not be committed to the repository and will be removed before mainnet deployment.
 
 ### Option 2: Full Stack Development
 
@@ -134,11 +145,14 @@ Requirements:
 ```
 ovt-fund/               # Next.js frontend application
 ├── components/         # React components
+│   ├── admin/         # Admin dashboard components
+│   └── __tests__/     # Component tests
 ├── pages/             # Next.js pages
 ├── public/            # Static assets
 ├── src/
 │   ├── hooks/         # Custom React hooks
 │   ├── lib/           # Utility functions and clients
+│   ├── mock-data/     # Development mock data (not for production)
 │   └── utils/         # Helper functions
 ├── styles/            # CSS styles
 └── types/             # TypeScript type definitions

@@ -5,7 +5,7 @@ interface ChartToggleProps {
 
 export default function ChartToggle({ activeChart, onToggle }: ChartToggleProps) {
   return (
-    <div className="inline-flex rounded-lg border border-gray-200 p-1 mb-4">
+    <div className="inline-flex rounded-lg border border-gray-200 p-1 mb-4" role="group" aria-label="Chart type toggle">
       <button
         onClick={() => onToggle('price')}
         className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -13,6 +13,7 @@ export default function ChartToggle({ activeChart, onToggle }: ChartToggleProps)
             ? 'bg-blue-600 text-white'
             : 'text-gray-600 hover:text-gray-900'
         }`}
+        aria-pressed={activeChart === 'price'}
       >
         Price Chart
       </button>
@@ -23,6 +24,7 @@ export default function ChartToggle({ activeChart, onToggle }: ChartToggleProps)
             ? 'bg-blue-600 text-white'
             : 'text-gray-600 hover:text-gray-900'
         }`}
+        aria-pressed={activeChart === 'nav'}
       >
         NAV Breakdown
       </button>
