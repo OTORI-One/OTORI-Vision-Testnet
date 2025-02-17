@@ -4,6 +4,9 @@ import TokenExplorerModal from './TokenExplorerModal';
 import { useOVTClient } from '../src/hooks/useOVTClient';
 import { Portfolio } from '../src/hooks/useOVTClient';
 
+// Constants for numeric handling
+const SATS_PER_BTC = 100000000;
+
 interface NAVData {
   name: string;
   value: number;      // Initial value in sats
@@ -21,20 +24,18 @@ interface NAVVisualizationProps {
 
 const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
-    if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-    if (value >= 1000) return `$${(value / 1000).toFixed(2)}k`;
-    return `$${value.toFixed(2)}`;
+    // Always use 'k' for thousands, never 'M'
+    if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}k`;
+    }
+    return `$${value.toFixed(0)}`;
   } else {
     const sats = Math.floor(value);
     // For values >= 10M sats (0.1 BTC), display in BTC with 2 decimals
     if (sats >= 10000000) {
       return `₿${(sats / 100000000).toFixed(2)}`;
     }
-    // For values >= 1M sats, use M format
-    if (sats >= 1000000) {
-      return `${(sats / 1000000).toFixed(1)}M sats`;
-    }
-    // For values >= 1000 sats, use k format
+    // Always use 'k' for thousands, never 'M'
     if (sats >= 1000) {
       return `${(sats / 1000).toFixed(0)}k sats`;
     }
@@ -42,13 +43,21 @@ const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btc
   }
 };
 
-const CustomTooltip = ({ active, payload, label, currency }: any) => {
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: any[];
+  label?: string;
+  currency: 'usd' | 'btc';
+  btcPrice: number | null;
+}
+
+const CustomTooltip = ({ active, payload, label, currency, btcPrice }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     const initialValue = data.initial;
-    const growthValue = data.current;
-    const totalValue = data.total;
-    const growthPercentage = ((growthValue / initialValue) * 100).toFixed(0);
+    const growthValue = data.growth;
+    const totalValue = initialValue + growthValue;
+    const growthPercentage = ((growthValue / initialValue) * 100).toFixed(1);
 
     return (
       <div className="bg-white p-4 rounded-lg shadow-lg border border-gray-200">
@@ -56,18 +65,18 @@ const CustomTooltip = ({ active, payload, label, currency }: any) => {
         <p className="text-sm text-gray-600 mt-1">{data.description}</p>
         <div className="mt-2 space-y-1">
           <p className="text-lg font-medium">
-            Total: {formatCurrencyValue(totalValue, currency)}
+            Total: {formatCurrencyValue(totalValue, currency, btcPrice)}
           </p>
           <div className="flex items-center space-x-2">
             <span className="text-gray-600">
-              Initial: {formatCurrencyValue(initialValue, currency)}
+              Initial: {formatCurrencyValue(initialValue, currency, btcPrice)}
             </span>
             <span className={`text-sm ${growthValue >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               ({growthValue >= 0 ? '+' : ''}{growthPercentage}%)
             </span>
           </div>
           <p className="text-sm text-gray-600">
-            Growth: {formatCurrencyValue(growthValue, currency)}
+            Growth: {formatCurrencyValue(growthValue, currency, btcPrice)}
           </p>
         </div>
       </div>
@@ -96,7 +105,7 @@ const getInitialTransaction = (value: number, currency: 'usd' | 'btc' = 'usd') =
 
 export default function NAVVisualization({ data, totalValue, changePercentage, baseCurrency = 'usd' }: NAVVisualizationProps) {
   const [selectedToken, setSelectedToken] = useState<Portfolio | null>(null);
-  const { formatValue } = useOVTClient();
+  const { formatValue, btcPrice } = useOVTClient();
 
   const formattedData = useMemo(() => {
     console.log('Formatting data:', data);
@@ -105,16 +114,30 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
       const current = Number(item.current);
       const growth = current - initial;
       
+      // If in USD mode, convert from sats to USD
+      if (baseCurrency === 'usd' && btcPrice) {
+        const initialUSD = (initial / SATS_PER_BTC) * btcPrice;
+        const growthUSD = (growth / SATS_PER_BTC) * btcPrice;
+        return {
+          ...item,
+          name: item.name,
+          initial: initialUSD,
+          growth: growthUSD,
+          total: initialUSD + growthUSD,
+          change: Number(((growth / initial) * 100).toFixed(1)),
+        };
+      }
+      
       return {
         ...item,
         name: item.name,
-        initial,          // Initial investment in sats
-        current: current, // Full current value
-        total: current,   // Total current value
+        initial,
+        growth,
+        total: initial + growth,
         change: Number(((growth / initial) * 100).toFixed(1)),
       };
     });
-  }, [data]);
+  }, [data, baseCurrency, btcPrice]);
 
   // Use the same NAV value from the card
   const chartNAV = useMemo(() => {
@@ -176,7 +199,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
               domain={yAxisDomain}
               padding={{ top: 20 }}
             />
-            <Tooltip content={(props) => <CustomTooltip {...props} currency={baseCurrency} />} />
+            <Tooltip content={(props) => <CustomTooltip {...props} currency={baseCurrency} btcPrice={btcPrice} />} />
             <Bar 
               dataKey="initial" 
               stackId="a" 
@@ -186,7 +209,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
               style={{ cursor: 'pointer' }}
             />
             <Bar 
-              dataKey="current" 
+              dataKey="growth" 
               stackId="a" 
               fill="#3B82F6" 
               name="Growth" 

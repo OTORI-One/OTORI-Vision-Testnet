@@ -29,6 +29,20 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
   const profitLoss = tokenData.current - tokenData.initial;
   const profitLossPercentage = ((profitLoss / tokenData.initial) * 100).toFixed(2);
 
+  // Format values using the OVT client's formatValue function
+  const formattedInitial = formatValue(tokenData.initial, baseCurrency);
+  const formattedCurrent = formatValue(tokenData.current, baseCurrency);
+  const formattedProfitLoss = formatValue(Math.abs(profitLoss), baseCurrency);
+
+  // Format holdings to use k instead of M
+  const formatHoldings = (value: string) => {
+    const numericValue = parseFloat(value.replace(/[^0-9.]/g, ''));
+    if (numericValue >= 1000) {
+      return `${(numericValue / 1000).toFixed(0)}k tokens`;
+    }
+    return value;
+  };
+
   return (
     <Transition.Root show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
@@ -93,7 +107,7 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div className="bg-gray-50 rounded-lg p-4">
                         <h4 className="text-sm font-medium text-gray-500">Total Holdings</h4>
-                        <p className="mt-1 text-xl font-semibold">{tokenData.holdings}</p>
+                        <p className="mt-1 text-xl font-semibold">{formatHoldings(tokenData.holdings)}</p>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-4">
                         <h4 className="text-sm font-medium text-gray-500">Profit/Loss</h4>
@@ -101,7 +115,7 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
                           {profitLoss >= 0 ? '+' : ''}{profitLossPercentage}%
                         </p>
                         <p className={`text-sm ${profitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatValue(profitLoss, baseCurrency)}
+                          {profitLoss >= 0 ? '+' : '-'}{formattedProfitLoss}
                         </p>
                       </div>
                     </div>

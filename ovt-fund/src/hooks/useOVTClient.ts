@@ -60,22 +60,15 @@ const formatValue = (sats: number, displayMode: 'btc' | 'usd' = 'btc', btcPrice?
   if (displayMode === 'usd' && btcPrice) {
     const usdValue = (sats / SATS_PER_BTC) * btcPrice;
     // USD formatting
-    if (usdValue >= 1000000) {
-      return `$${(usdValue / 1000000).toFixed(2)}M`;
-    }
     if (usdValue >= 1000) {
-      return `$${(usdValue / 1000).toFixed(2)}k`;
+      return `$${(usdValue / 1000).toFixed(0)}k`;
     }
     return `$${usdValue.toFixed(2)}`;
   }
 
   // BTC display mode
-  const btcValue = sats / SATS_PER_BTC;
   if (sats >= 10000000) { // 0.1 BTC or more
-    return `₿${btcValue.toFixed(2)}`;
-  }
-  if (sats >= 1000000) {
-    return `${(sats / 1000000).toFixed(1)}M sats`;
+    return `₿${(sats / SATS_PER_BTC).toFixed(2)}`;
   }
   if (sats >= 1000) {
     return `${(sats / 1000).toFixed(0)}k sats`;
@@ -157,10 +150,13 @@ export function useOVTClient() {
           console.log('Fetching NAV in mock mode');
           console.log('Current portfolio positions:', portfolioPositions);
           
-          // Calculate totals in sats (excluding OVT mint)
+          // Calculate totals in sats (including simulated growth)
           const totalValueSats = portfolioPositions.reduce((sum, item) => {
-            console.log(`Adding ${item.name} value: ${item.current} sats`);
-            return sum + item.current;
+            // Simulate growth by adding a percentage to the initial value
+            const growthMultiplier = 1.1; // 10% growth
+            const currentValue = Math.floor(item.value * growthMultiplier);
+            console.log(`Adding ${item.name} value: ${currentValue} sats`);
+            return sum + currentValue;
           }, 0);
           
           const totalInitialSats = portfolioPositions.reduce((sum, item) => {
@@ -168,18 +164,22 @@ export function useOVTClient() {
             return sum + item.value;
           }, 0);
 
-          console.log('Total value in sats:', totalValueSats, '=', totalValueSats / SATS_PER_BTC, 'BTC');
-          console.log('Total initial in sats:', totalInitialSats, '=', totalInitialSats / SATS_PER_BTC, 'BTC');
+          console.log('Total value in sats:', totalValueSats);
           
-          const changePercentage = totalInitialSats > 0 ? 
-            ((totalValueSats - totalInitialSats) / totalInitialSats) * 100 : 0;
+          // Calculate growth percentage
+          const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
 
           // Update current values and changes for each position
-          const updatedPositions = portfolioPositions.map(position => ({
-            ...position,
-            current: position.value, // For now, current equals initial
-            change: 0 // For now, no change
-          }));
+          const updatedPositions = portfolioPositions.map(position => {
+            const growthMultiplier = 1.1; // 10% growth
+            const currentValue = Math.floor(position.value * growthMultiplier);
+            const change = currentValue - position.value;
+            return {
+              ...position,
+              current: currentValue,
+              change
+            };
+          });
 
           const formattedTotal = formatValue(totalValueSats, 'btc');
           console.log('Formatted total:', formattedTotal);
@@ -187,7 +187,7 @@ export function useOVTClient() {
           const newNavData = {
             totalValue: formattedTotal,
             totalValueSats,
-            changePercentage: `+${changePercentage.toFixed(0)}%`,
+            changePercentage: `${changePercentage.toFixed(2)}%`,
             portfolioItems: updatedPositions
           };
           
