@@ -4,7 +4,7 @@ import '@/styles/globals.css';
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <LaserEyesProvider config={{ network: 'mainnet' }}>
+    <LaserEyesProvider config={{ network: 'testnet' }}>
       <Component {...pageProps} />
     </LaserEyesProvider>
   );
