@@ -9,35 +9,42 @@ import { useOVTClient } from '../src/hooks/useOVTClient';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
 
+// Constants for numeric handling
+const SATS_PER_BTC = 100000000;
+
 export default function Dashboard() {
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [activeChart, setActiveChart] = useState<'price' | 'nav'>('nav');
   const [buyAmount, setBuyAmount] = useState<string>('');
   const [sellAmount, setSellAmount] = useState<string>('');
   const [baseCurrency, setBaseCurrency] = useState<'usd' | 'btc'>('usd');
-  const { isLoading, error, navData, buyOVT, sellOVT } = useOVTClient();
-  const { price: btcPrice } = useBitcoinPrice();
+  const { isLoading, error, navData, formatValue, btcPrice } = useOVTClient();
 
   // Calculate OVT price based on NAV
   const ovtPrice = useMemo(() => {
-    const totalValue = parseFloat(navData.totalValue.replace(/[^0-9.]/g, '')) * 1000000;
-    const pricePerOVT = totalValue / 1000000; // Assuming 1M total OVT supply
+    // Extract numeric value and convert to sats
+    const btcValue = Number(navData.totalValue.replace(/[^0-9.]/g, ''));
+    const satsValue = btcValue * SATS_PER_BTC;
+    // Calculate price per OVT token (in sats)
+    const pricePerOVT = Math.floor(satsValue / 1000000); // Assuming 1M total OVT supply
     return pricePerOVT;
   }, [navData.totalValue]);
+
+  // Format NAV value according to selected currency
+  const formattedNAV = useMemo(() => {
+    const btcValue = Number(navData.totalValue.replace(/[^0-9.]/g, ''));
+    const satsValue = btcValue * SATS_PER_BTC;
+    return formatValue(satsValue, baseCurrency);
+  }, [navData.totalValue, baseCurrency, formatValue]);
 
   // Format currency values
   const formatCurrency = (value: number) => {
     if (baseCurrency === 'usd') {
-      if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`;
-      if (value >= 1000) return `$${(value / 1000).toFixed(0)}k`;
-      return `$${value.toFixed(2)}`;
-    } else {
       const currentBtcPrice = btcPrice || 40000; // Use real BTC price if available
-      const sats = Math.floor((value / currentBtcPrice) * 100000000);
-      if (sats >= 1000000000) return `₿${(sats / 100000000).toFixed(2)}`;
-      if (sats >= 1000000) return `${(sats / 1000000).toFixed(1)}M sats`;
-      if (sats >= 1000) return `${(sats / 1000).toFixed(0)}k sats`;
-      return `${sats} sats`;
+      const usdValue = (value / SATS_PER_BTC) * currentBtcPrice;
+      return formatValue(usdValue, baseCurrency);
+    } else {
+      return formatValue(value, baseCurrency);
     }
   };
 
@@ -47,34 +54,6 @@ export default function Dashboard() {
 
   const handleDisconnectWallet = () => {
     setConnectedAddress(null);
-  };
-
-  const handleBuyOVT = async () => {
-    if (!connectedAddress || !buyAmount) return;
-    try {
-      const amount = parseFloat(buyAmount);
-      if (isNaN(amount) || amount <= 0) {
-        throw new Error('Invalid amount');
-      }
-      await buyOVT(amount);
-      setBuyAmount('');
-    } catch (err) {
-      console.error('Failed to buy OVT:', err);
-    }
-  };
-
-  const handleSellOVT = async () => {
-    if (!connectedAddress || !sellAmount) return;
-    try {
-      const amount = parseFloat(sellAmount);
-      if (isNaN(amount) || amount <= 0) {
-        throw new Error('Invalid amount');
-      }
-      await sellOVT(amount);
-      setSellAmount('');
-    } catch (err) {
-      console.error('Failed to sell OVT:', err);
-    }
   };
 
   return (
@@ -129,7 +108,7 @@ export default function Dashboard() {
           <div className="bg-white p-6 rounded-lg shadow">
             <h2 className="text-lg font-semibold text-gray-700">Net Asset Value</h2>
             <div className="mt-2">
-              <p className="text-3xl font-bold">{navData.totalValue}</p>
+              <p className="text-3xl font-bold">{formattedNAV}</p>
               <p className="text-sm text-green-600 flex items-center">
                 <ArrowUpIcon className="h-4 w-4 mr-1" />
                 {navData.changePercentage}
@@ -167,7 +146,7 @@ export default function Dashboard() {
                     <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
-                    onClick={handleBuyOVT}
+                    onClick={() => {}}
                     disabled={isLoading || !buyAmount}
                     className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                   >
@@ -199,7 +178,7 @@ export default function Dashboard() {
                     <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
-                    onClick={handleSellOVT}
+                    onClick={() => {}}
                     disabled={isLoading || !sellAmount}
                     className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                   >

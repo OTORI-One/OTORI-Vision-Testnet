@@ -24,11 +24,19 @@ interface NAVVisualizationProps {
 
 const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
-    // Always use 'k' for thousands, never 'M'
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}k`;
+    // Convert from sats to USD if btcPrice is provided
+    const usdValue = btcPrice ? (value / SATS_PER_BTC) * btcPrice : value;
+    
+    // Use 'M' for values ≥ 1M with one decimal
+    if (usdValue >= 1000000) {
+      return `$${(usdValue / 1000000).toFixed(1)}M`;
     }
-    return `$${value.toFixed(0)}`;
+    // Use 'k' for values ≥ 1k with no decimals
+    if (usdValue >= 1000) {
+      return `$${(usdValue / 1000).toFixed(0)}k`;
+    }
+    // Show full number with no decimals for values < 1k
+    return `$${usdValue.toFixed(0)}`;
   } else {
     const sats = Math.floor(value);
     // For values >= 10M sats (0.1 BTC), display in BTC with 2 decimals
@@ -93,13 +101,13 @@ const formatDate = (date: Date): string => {
   });
 };
 
-const getInitialTransaction = (value: number, currency: 'usd' | 'btc' = 'usd') => {
+const getInitialTransaction = (tokenAmount: number, pricePerToken: number, currency: 'usd' | 'btc' = 'usd') => {
   const initialDate = new Date('2024-01-15'); // Set a fixed initial investment date
   return {
     date: formatDate(initialDate),
     type: 'buy' as const,
-    amount: new Intl.NumberFormat('en-US').format(value),
-    price: formatCurrencyValue(1, currency), // Initial price of $1
+    amount: new Intl.NumberFormat('en-US').format(tokenAmount),
+    price: formatCurrencyValue(pricePerToken, currency), // Use actual price per token
   };
 };
 
@@ -141,9 +149,12 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
 
   // Use the same NAV value from the card
   const chartNAV = useMemo(() => {
-    console.log('Calculating chart NAV, total value:', totalValue);
-    return totalValue;
-  }, [totalValue]);
+    console.log('Calculating chart NAV, total value:', totalValue, 'btcPrice:', btcPrice, 'baseCurrency:', baseCurrency);
+    // Extract the numeric value from the BTC string (removing ₿ symbol)
+    const numericValue = Number(totalValue.replace(/[^0-9.]/g, '')) * SATS_PER_BTC;
+    // Format according to selected currency
+    return formatCurrencyValue(numericValue, baseCurrency, btcPrice);
+  }, [totalValue, baseCurrency, btcPrice]);
 
   const formatYAxis = (value: number) => {
     console.log('Formatting Y axis value:', value, 'in mode:', baseCurrency);
@@ -240,9 +251,12 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           initial: selectedToken.value,
           current: selectedToken.current,
           change: selectedToken.change,
-          address: '0x1234...5678',
-          holdings: `${new Intl.NumberFormat('en-US').format(selectedToken.tokenAmount)} tokens`,
-          transactions: [getInitialTransaction(selectedToken.value, baseCurrency)],
+          address: selectedToken.address || 'bc1p...',
+          transactionId: selectedToken.transactionId,
+          holdings: formatValue(selectedToken.current, baseCurrency),
+          pricePerToken: selectedToken.pricePerToken,
+          tokenAmount: selectedToken.tokenAmount,
+          transactions: [getInitialTransaction(selectedToken.tokenAmount, selectedToken.pricePerToken, baseCurrency)],
         } : {
           name: '',
           description: '',
@@ -251,6 +265,8 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           change: 0,
           address: '',
           holdings: '',
+          pricePerToken: 0,
+          tokenAmount: 0,
           transactions: []
         }}
         baseCurrency={baseCurrency}
