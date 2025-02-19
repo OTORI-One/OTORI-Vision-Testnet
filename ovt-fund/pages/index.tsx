@@ -5,55 +5,55 @@ import WalletConnector from '../components/WalletConnector';
 import NAVVisualization from '../components/NAVVisualization';
 import PriceChart from '../components/PriceChart';
 import ChartToggle from '../components/ChartToggle';
-import { useOVTClient } from '../src/hooks/useOVTClient';
+import { useOVTClient, SATS_PER_BTC } from '../src/hooks/useOVTClient';
 import AdminDashboard from '../components/admin/AdminDashboard';
 import { useBitcoinPrice } from '../src/hooks/useBitcoinPrice';
-
-// Constants for numeric handling
-const SATS_PER_BTC = 100000000;
+import { useLaserEyes } from '@omnisat/lasereyes';
 
 export default function Dashboard() {
   const [connectedAddress, setConnectedAddress] = useState<string | null>(null);
   const [activeChart, setActiveChart] = useState<'price' | 'nav'>('nav');
   const [buyAmount, setBuyAmount] = useState<string>('');
   const [sellAmount, setSellAmount] = useState<string>('');
-  const [baseCurrency, setBaseCurrency] = useState<'usd' | 'btc'>('usd');
-  const { isLoading, error, navData, formatValue, btcPrice } = useOVTClient();
+  const [networkError, setNetworkError] = useState<string | null>(null);
+  
+  const { 
+    isLoading, 
+    error, 
+    navData, 
+    formatValue,
+    baseCurrency,
+    setBaseCurrency
+  } = useOVTClient();
+  const { price: btcPrice } = useBitcoinPrice();
+  const { network } = useLaserEyes();
 
   // Calculate OVT price based on NAV
   const ovtPrice = useMemo(() => {
-    // Extract numeric value and convert to sats
     const btcValue = Number(navData.totalValue.replace(/[^0-9.]/g, ''));
     const satsValue = btcValue * SATS_PER_BTC;
-    // Calculate price per OVT token (in sats)
     const pricePerOVT = Math.floor(satsValue / 1000000); // Assuming 1M total OVT supply
     return pricePerOVT;
   }, [navData.totalValue]);
 
-  // Format NAV value according to selected currency
-  const formattedNAV = useMemo(() => {
-    const btcValue = Number(navData.totalValue.replace(/[^0-9.]/g, ''));
-    const satsValue = btcValue * SATS_PER_BTC;
-    return formatValue(satsValue, baseCurrency);
-  }, [navData.totalValue, baseCurrency, formatValue]);
+  // Use the NAV value directly from navData
+  const formattedNAV = navData.totalValue;
 
   // Format currency values
   const formatCurrency = (value: number) => {
-    if (baseCurrency === 'usd') {
-      const currentBtcPrice = btcPrice || 40000; // Use real BTC price if available
-      const usdValue = (value / SATS_PER_BTC) * currentBtcPrice;
-      return formatValue(usdValue, baseCurrency);
-    } else {
-      return formatValue(value, baseCurrency);
-    }
+    return formatValue(value, baseCurrency);
   };
 
   const handleConnectWallet = (address: string) => {
-    setConnectedAddress(address);
+    // Only set the connected address if we have one
+    if (address) {
+      setConnectedAddress(address);
+    }
   };
 
   const handleDisconnectWallet = () => {
     setConnectedAddress(null);
+    setNetworkError(null);
   };
 
   return (
@@ -146,7 +146,6 @@ export default function Dashboard() {
                     <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
-                    onClick={() => {}}
                     disabled={isLoading || !buyAmount}
                     className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
                   >
@@ -178,7 +177,6 @@ export default function Dashboard() {
                     <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
-                    onClick={() => {}}
                     disabled={isLoading || !sellAmount}
                     className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
                   >
