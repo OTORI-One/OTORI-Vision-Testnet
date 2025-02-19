@@ -3,7 +3,7 @@ import { ArchClient } from '../lib/archClient';
 import { useBitcoinPrice } from '../hooks/useBitcoinPrice';
 
 // Constants for numeric handling
-const SATS_PER_BTC = 100000000;
+export const SATS_PER_BTC = 100000000;
 
 export interface Portfolio {
   name: string;
@@ -14,6 +14,7 @@ export interface Portfolio {
   transactionId?: string;  // Reference to the position entry transaction
   tokenAmount: number;     // Number of tokens
   pricePerToken: number;   // Price per token in sats
+  address: string;         // Bitcoin address holding the position
 }
 
 interface NAVData {
@@ -60,18 +61,29 @@ const formatValue = (sats: number, displayMode: 'btc' | 'usd' = 'btc', btcPrice?
   if (displayMode === 'usd' && btcPrice) {
     const usdValue = (sats / SATS_PER_BTC) * btcPrice;
     // USD formatting
-    if (usdValue >= 1000) {
-      return `$${(usdValue / 1000).toFixed(0)}k`;
+    if (usdValue >= 1000000) {
+      return `$${(usdValue / 1000000).toFixed(2)}M`; // Above 1M: 2 decimals with M
     }
-    return `$${usdValue.toFixed(2)}`;
+    if (usdValue >= 1000) {
+      return `$${(usdValue / 1000).toFixed(1)}k`; // Below 1M: 1 decimal with k
+    }
+    if (usdValue < 100) {
+      return `$${usdValue.toFixed(2)}`; // Below 100: 2 decimals
+    }
+    return `$${Math.round(usdValue)}`; // Below 1000: no decimals
   }
 
   // BTC display mode
   if (sats >= 10000000) { // 0.1 BTC or more
-    return `₿${(sats / SATS_PER_BTC).toFixed(2)}`;
+    return `₿${(sats / SATS_PER_BTC).toFixed(2)}`; // Show as BTC with 2 decimals
+  }
+  
+  // Show as sats with k/M notation
+  if (sats >= 1000000) {
+    return `${(sats / 1000000).toFixed(2)}M sats`; // Millions
   }
   if (sats >= 1000) {
-    return `${(sats / 1000).toFixed(0)}k sats`;
+    return `${(sats / 1000).toFixed(1)}k sats`; // Thousands
   }
   return `${sats} sats`;
 };
@@ -124,11 +136,12 @@ if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
 export function useOVTClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [baseCurrency, setBaseCurrency] = useState<'btc' | 'usd'>('usd');
   const { price: btcPrice } = useBitcoinPrice();
   const [navData, setNavData] = useState<NAVData>(() => ({
-    totalValue: '₿0.00',
+    totalValue: '$0.00',
     totalValueSats: 0,
-    changePercentage: '+0%',
+    changePercentage: '0%',
     portfolioItems: []
   }));
 
@@ -143,7 +156,7 @@ export function useOVTClient() {
 
   // Fetch NAV data periodically
   useEffect(() => {
-    const fetchNAV = async () => {
+    const fetchNAV = async (currency: 'btc' | 'usd' = 'usd') => {
       try {
         // In development, use the in-memory positions
         if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
@@ -166,8 +179,9 @@ export function useOVTClient() {
 
           console.log('Total value in sats:', totalValueSats);
           
-          // Calculate growth percentage
-          const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
+          // Calculate growth percentage (handle empty portfolio case)
+          const changePercentage = totalInitialSats === 0 ? 0 : 
+            ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
 
           // Update current values and changes for each position
           const updatedPositions = portfolioPositions.map(position => {
@@ -181,7 +195,8 @@ export function useOVTClient() {
             };
           });
 
-          const formattedTotal = formatValue(totalValueSats, 'btc');
+          // Format total value according to currency mode
+          const formattedTotal = formatValue(totalValueSats, currency, btcPrice);
           console.log('Formatted total:', formattedTotal);
           
           const newNavData = {
@@ -207,7 +222,8 @@ export function useOVTClient() {
           description: item.description,
           transactionId: item.transactionId,
           tokenAmount: item.tokenAmount,
-          pricePerToken: item.pricePerToken
+          pricePerToken: item.pricePerToken,
+          address: item.address
         }));
 
         const totalValueSats = portfolioItems.reduce((sum, item) => sum + item.current, 0);
@@ -215,7 +231,7 @@ export function useOVTClient() {
         const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
         
         setNavData({
-          totalValue: formatValue(totalValueSats, 'btc'),
+          totalValue: formatValue(totalValueSats, currency, btcPrice),
           totalValueSats,
           changePercentage: `+${changePercentage.toFixed(0)}%`,
           portfolioItems
@@ -225,18 +241,19 @@ export function useOVTClient() {
       }
     };
 
-    fetchNAV();
-    const interval = setInterval(fetchNAV, 30000);
+    // Initial fetch with current currency mode
+    fetchNAV(baseCurrency);
+    const interval = setInterval(() => fetchNAV(baseCurrency), 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [btcPrice, baseCurrency, portfolioPositions.length]); // Add portfolioPositions.length as a dependency
 
   // Add position entry
   const addPosition = useCallback(async (position: Omit<Portfolio, 'current' | 'change'>) => {
     const newPosition: Portfolio = {
       ...position,
-      current: position.value, // Initially, current value equals initial value
-      change: 0
+      current: Math.floor(position.value * 1.1), // Add 10% growth
+      change: 10 // 10% growth
     };
 
     if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
@@ -253,6 +270,8 @@ export function useOVTClient() {
     error,
     navData,
     btcPrice,
+    baseCurrency,
+    setBaseCurrency,
     formatValue: (sats: number, displayMode: 'btc' | 'usd' = 'btc') => 
       formatValue(sats, displayMode, btcPrice),
     addPosition,
