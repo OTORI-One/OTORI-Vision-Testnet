@@ -12,11 +12,6 @@ export default function WalletConnector({ onConnect, onDisconnect, connectedAddr
   const [error, setError] = useState<string | null>(null);
   const { connect, disconnect, address, network } = useLaserEyes();
 
-  const checkNetwork = (currentNetwork: string | undefined) => {
-    if (!currentNetwork) return false;
-    return currentNetwork.toLowerCase().includes('test');
-  };
-
   const handleConnect = useCallback(async (wallet: ProviderType) => {
     setIsConnecting(true);
     setError(null);
@@ -28,17 +23,7 @@ export default function WalletConnector({ onConnect, onDisconnect, connectedAddr
       if (address) {
         console.log('Successfully connected to wallet');
         console.log('Current network:', network);
-        console.log('Full address:', address);
-        
-        // Check network after successful connection
-        if (!checkNetwork(network)) {
-          console.log('Invalid network detected:', network);
-          setError('Please switch to Bitcoin Testnet 4 in your wallet settings');
-          disconnect();
-          return;
-        }
-
-        console.log('Valid testnet detected, proceeding with connection');
+        console.log('Current address:', address);
         onConnect(address);
       }
     } catch (err: any) {
@@ -64,7 +49,7 @@ export default function WalletConnector({ onConnect, onDisconnect, connectedAddr
     } finally {
       setIsConnecting(false);
     }
-  }, [connect, disconnect, address, network, onConnect]);
+  }, [connect, address, network, onConnect]);
 
   const handleDisconnect = useCallback(() => {
     disconnect();
@@ -72,33 +57,13 @@ export default function WalletConnector({ onConnect, onDisconnect, connectedAddr
     setError(null);
   }, [disconnect, onDisconnect]);
 
-  const formatAddress = (addr: string) => {
-    // Check if it's a native segwit address (starts with tb1q for testnet)
-    if (addr.startsWith('tb1q') || addr.startsWith('bc1q')) {
-      return addr;
-    }
-    // For taproot addresses (starts with tb1p for testnet)
-    if (addr.startsWith('tb1p') || addr.startsWith('bc1p')) {
-      return addr;
-    }
-    // For legacy addresses
-    if (addr.startsWith('m') || addr.startsWith('n') || addr.startsWith('2') || addr.startsWith('1')) {
-      return addr;
-    }
-    // If none of the above, return the original format
-    return addr;
-  };
-
   if (connectedAddress) {
-    const formattedAddress = formatAddress(connectedAddress);
-    const displayAddress = `${formattedAddress.slice(0, 8)}...${formattedAddress.slice(-8)}`;
-
     return (
       <div className="flex items-center space-x-4">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-green-500 rounded-full"></div>
           <span className="text-sm text-gray-600">
-            {displayAddress}
+            {connectedAddress.slice(0, 6)}...{connectedAddress.slice(-4)}
           </span>
           <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full">
             Testnet 4

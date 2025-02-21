@@ -24,19 +24,11 @@ interface NAVVisualizationProps {
 
 const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
-    // Convert from sats to USD if btcPrice is provided
-    const usdValue = btcPrice ? (value / SATS_PER_BTC) * btcPrice : value;
-    
-    // Use 'M' for values ≥ 1M with one decimal
-    if (usdValue >= 1000000) {
-      return `$${(usdValue / 1000000).toFixed(1)}M`;
+    // Always use 'k' for thousands, never 'M'
+    if (value >= 1000) {
+      return `$${(value / 1000).toFixed(0)}k`;
     }
-    // Use 'k' for values ≥ 1k with no decimals
-    if (usdValue >= 1000) {
-      return `$${(usdValue / 1000).toFixed(0)}k`;
-    }
-    // Show full number with no decimals for values < 1k
-    return `$${usdValue.toFixed(0)}`;
+    return `$${value.toFixed(0)}`;
   } else {
     const sats = Math.floor(value);
     // For values >= 10M sats (0.1 BTC), display in BTC with 2 decimals
@@ -149,12 +141,9 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
 
   // Use the same NAV value from the card
   const chartNAV = useMemo(() => {
-    console.log('Calculating chart NAV, total value:', totalValue, 'btcPrice:', btcPrice, 'baseCurrency:', baseCurrency);
-    // Extract the numeric value from the BTC string (removing ₿ symbol)
-    const numericValue = Number(totalValue.replace(/[^0-9.]/g, '')) * SATS_PER_BTC;
-    // Format according to selected currency
-    return formatCurrencyValue(numericValue, baseCurrency, btcPrice);
-  }, [totalValue, baseCurrency, btcPrice]);
+    console.log('Calculating chart NAV, total value:', totalValue);
+    return totalValue;
+  }, [totalValue]);
 
   const formatYAxis = (value: number) => {
     console.log('Formatting Y axis value:', value, 'in mode:', baseCurrency);
