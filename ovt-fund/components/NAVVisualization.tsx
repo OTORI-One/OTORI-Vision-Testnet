@@ -24,21 +24,38 @@ interface NAVVisualizationProps {
 
 const formatCurrencyValue = (value: number, currency: 'usd' | 'btc' = 'usd', btcPrice: number | null = null) => {
   if (currency === 'usd') {
-    // Always use 'k' for thousands, never 'M'
-    if (value >= 1000) {
-      return `$${(value / 1000).toFixed(0)}k`;
+    // Convert from sats to USD if btcPrice is provided
+    const usdValue = btcPrice ? (value / SATS_PER_BTC) * btcPrice : value;
+    
+    // Use 'M' for values ≥ 1M with one decimal
+    if (usdValue >= 1000000) {
+      return `$${(usdValue / 1000000).toFixed(1)}M`;
     }
-    return `$${value.toFixed(0)}`;
+    // Use 'k' for values ≥ 1k with no decimals
+    if (usdValue >= 1000) {
+      return `$${Math.floor(usdValue / 1000)}k`;
+    }
+    // Show full number with no decimals for values ≥ 100
+    if (usdValue >= 100) {
+      return `$${Math.floor(usdValue)}`;
+    }
+    // Show full number with two decimals for values < 100
+    return `$${usdValue.toFixed(2)}`;
   } else {
     const sats = Math.floor(value);
     // For values >= 10M sats (0.1 BTC), display in BTC with 2 decimals
     if (sats >= 10000000) {
-      return `₿${(sats / 100000000).toFixed(2)}`;
+      return `₿${(sats / SATS_PER_BTC).toFixed(2)}`;
     }
-    // Always use 'k' for thousands, never 'M'
+    // For values >= 1M sats, use 'M' notation with two decimals
+    if (sats >= 1000000) {
+      return `${(sats / 1000000).toFixed(2)}M sats`;
+    }
+    // For values >= 1k sats, use 'k' notation with no decimals
     if (sats >= 1000) {
-      return `${(sats / 1000).toFixed(0)}k sats`;
+      return `${Math.floor(sats / 1000)}k sats`;
     }
+    // Show full number for values < 1k sats
     return `${sats} sats`;
   }
 };
@@ -114,20 +131,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
       const current = Number(item.current);
       const growth = current - initial;
       
-      // If in USD mode, convert from sats to USD
-      if (baseCurrency === 'usd' && btcPrice) {
-        const initialUSD = (initial / SATS_PER_BTC) * btcPrice;
-        const growthUSD = (growth / SATS_PER_BTC) * btcPrice;
-        return {
-          ...item,
-          name: item.name,
-          initial: initialUSD,
-          growth: growthUSD,
-          total: initialUSD + growthUSD,
-          change: Number(((growth / initial) * 100).toFixed(1)),
-        };
-      }
-      
+      // Keep values in sats and let formatCurrencyValue handle the conversion
       return {
         ...item,
         name: item.name,
@@ -137,23 +141,38 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
         change: Number(((growth / initial) * 100).toFixed(1)),
       };
     });
-  }, [data, baseCurrency, btcPrice]);
+  }, [data]);
 
   // Use the same NAV value from the card
   const chartNAV = useMemo(() => {
-    console.log('Calculating chart NAV, total value:', totalValue);
+    console.log('Calculating chart NAV, total value:', totalValue, 'btcPrice:', btcPrice, 'baseCurrency:', baseCurrency);
     return totalValue;
   }, [totalValue]);
 
   const formatYAxis = (value: number) => {
     console.log('Formatting Y axis value:', value, 'in mode:', baseCurrency);
-    return formatValue(value, baseCurrency);
+    return formatCurrencyValue(value, baseCurrency, btcPrice);
   };
 
   // Calculate the maximum value for proper Y-axis scaling
-  const maxValue = Math.max(...formattedData.map(item => item.total));
+  const maxValue = formattedData.length > 0 
+    ? Math.max(...formattedData.map(item => item.total))
+    : 1000000; // Default to 1M when no data
+
   const yAxisDomain = [0, Math.ceil(maxValue * 1.1)]; // Add 10% padding to the top
   console.log('Y axis domain:', yAxisDomain);
+
+  // If no data, provide a default dataset
+  const chartData = formattedData.length > 0 ? formattedData : [
+    {
+      name: 'No Data',
+      initial: 0,
+      growth: 0,
+      total: 0,
+      change: 0,
+      description: 'No portfolio data available'
+    }
+  ];
 
   const handleClick = (data: any, index: number) => {
     console.log('Bar clicked:', data);
@@ -176,7 +195,7 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
       <div className="h-80">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
-            data={formattedData}
+            data={chartData}
             margin={{
               top: 20,
               right: 30,
@@ -241,11 +260,8 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           current: selectedToken.current,
           change: selectedToken.change,
           address: selectedToken.address || 'bc1p...',
-          transactionId: selectedToken.transactionId,
           holdings: formatValue(selectedToken.current, baseCurrency),
-          pricePerToken: selectedToken.pricePerToken,
-          tokenAmount: selectedToken.tokenAmount,
-          transactions: [getInitialTransaction(selectedToken.tokenAmount, selectedToken.pricePerToken, baseCurrency)],
+          transactions: [getInitialTransaction(selectedToken.tokenAmount, selectedToken.pricePerToken, baseCurrency)]
         } : {
           name: '',
           description: '',
@@ -254,8 +270,6 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           change: 0,
           address: '',
           holdings: '',
-          pricePerToken: 0,
-          tokenAmount: 0,
           transactions: []
         }}
         baseCurrency={baseCurrency}
