@@ -30,40 +30,67 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
     return Math.floor((btcAmount * SATS_PER_BTC) / pricePerToken);
   };
 
+  const formatTokenAmount = (amount: number): string => {
+    if (amount >= 1000000) {
+      return `${(amount / 1000000).toFixed(2)}M tokens`;
+    }
+    if (amount >= 1000) {
+      return `${(amount / 1000).toFixed(2)}k tokens`;
+    }
+    return `${Math.floor(amount)} tokens`;
+  };
+
+  const handleInputChange = (field: keyof typeof newPosition, value: string) => {
+    setError(null); // Clear error when any field changes
+    setNewPosition(prev => ({ ...prev, [field]: value }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     try {
+      // Validate required fields first
+      if (!newPosition.name.trim()) {
+        setError('Project name is required');
+        return;
+      }
+      if (!newPosition.description.trim()) {
+        setError('Description is required');
+        return;
+      }
+
       const btcAmount = parseFloat(newPosition.investmentAmount);
       const pricePerToken = parseFloat(newPosition.pricePerToken);
       
       if (isNaN(btcAmount) || btcAmount <= 0) {
-        throw new Error('Invalid investment amount');
+        setError('Invalid investment amount');
+        return;
       }
       if (isNaN(pricePerToken) || pricePerToken <= 0) {
-        throw new Error('Invalid price per token');
+        setError('Invalid price per token');
+        return;
       }
 
       const satsValue = Math.floor(btcAmount * SATS_PER_BTC);
       const tokenAmount = calculateTokenAmount();
       
-      // Create new position
-      const position = {
+      const portfolioData = {
         name: newPosition.name,
         description: newPosition.description,
         value: satsValue,
         tokenAmount,
         pricePerToken: Math.floor(parseFloat(newPosition.pricePerToken)),
+        address: 'bc1p...', // Mock address for testing
       };
 
       // This will require multi-sig approval
       onActionRequiringMultiSig({
         type: 'ADD_POSITION',
-        description: `Add position for ${position.name}`,
-        data: position,
+        description: `Add position for ${portfolioData.name}`,
+        data: portfolioData,
         execute: async (signatures: string[]) => {
-          await addPosition(position);
+          await addPosition(portfolioData);
           // Reset form
           setNewPosition({
             name: '',
@@ -98,7 +125,7 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
                 required
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                 value={newPosition.name}
-                onChange={(e) => setNewPosition(prev => ({ ...prev, name: e.target.value }))}
+                onChange={(e) => handleInputChange('name', e.target.value)}
               />
             </div>
 
@@ -113,7 +140,7 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
                 required
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                 value={newPosition.description}
-                onChange={(e) => setNewPosition(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) => handleInputChange('description', e.target.value)}
               />
             </div>
 
@@ -132,7 +159,7 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
                   className="block w-full rounded-md border-gray-300 pl-7 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                   placeholder="0.00000000"
                   value={newPosition.investmentAmount}
-                  onChange={(e) => setNewPosition(prev => ({ ...prev, investmentAmount: e.target.value }))}
+                  onChange={(e) => handleInputChange('investmentAmount', e.target.value)}
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   <span className="text-gray-500 sm:text-sm">BTC</span>
@@ -155,7 +182,7 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
                   className="block w-full rounded-md border-gray-300 pl-7 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                   placeholder="0"
                   value={newPosition.pricePerToken}
-                  onChange={(e) => setNewPosition(prev => ({ ...prev, pricePerToken: e.target.value }))}
+                  onChange={(e) => handleInputChange('pricePerToken', e.target.value)}
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                   <span className="text-gray-500 sm:text-sm">sats</span>
@@ -170,22 +197,23 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
               <div className="mt-1 relative rounded-md shadow-sm">
                 <input
                   type="text"
+                  name="tokenAmount"
                   id="tokenAmount"
-                  readOnly
-                  className="block w-full rounded-md border-gray-300 bg-gray-50 pl-7 pr-12 focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  value={new Intl.NumberFormat().format(calculateTokenAmount())}
+                  className="block w-full pr-12 sm:text-sm border-gray-300 rounded-md disabled:bg-gray-100"
+                  value={calculateTokenAmount()}
+                  disabled
+                  aria-label="Token Amount (Calculated)"
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">tokens</span>
+                  <span className="text-gray-500 sm:text-sm" id="token-amount-display">
+                    {calculateTokenAmount() ? formatTokenAmount(calculateTokenAmount()) : '0 tokens'}
+                  </span>
                 </div>
               </div>
-              <p className="mt-1 text-sm text-gray-500">
-                Tokens to receive based on investment amount and price
-              </p>
             </div>
 
             {error && (
-              <div className="rounded-md bg-red-50 p-4">
+              <div className="rounded-md bg-red-50 p-4" role="alert">
                 <div className="flex">
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-red-800">Error</h3>

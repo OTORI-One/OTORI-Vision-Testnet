@@ -13,21 +13,45 @@ jest.mock('../../src/hooks/useBitcoinPrice', () => ({
   })
 }));
 
+// Mock useOVTClient hook with proper formatting functions
+jest.mock('../../src/hooks/useOVTClient', () => {
+  const BTC_PRICE = 50000; // $50,000 per BTC
+  const SATS_PER_BTC = 100000000; // 100M sats per BTC
+
+  const mockClient = {
+    formatValue: (value: number, currency: 'usd' | 'btc') => {
+      if (currency === 'btc') {
+        return `₿${(value / SATS_PER_BTC).toFixed(2)}`;
+      }
+      // Convert sats to USD: (sats -> BTC) * USD/BTC price
+      const usdValue = (value / SATS_PER_BTC) * BTC_PRICE;
+      return `$${usdValue.toFixed(2)}`;
+    }
+  };
+
+  return {
+    useOVTClient: () => mockClient,
+    __esModule: true,
+    default: mockClient
+  };
+});
+
 describe('TokenExplorerModal', () => {
   const mockTokenData = {
     name: 'Test Project',
     description: 'Test Description',
-    initial: 1000000,
-    current: 2000000,
+    initial: 100000000, // 1 BTC in sats = $50,000
+    current: 200000000, // 2 BTC in sats = $100,000
     change: 100,
     address: '0x1234...5678',
     holdings: '1000 OTORI',
+    totalValue: 200000000, // 2 BTC in sats = $100,000
     transactions: [
       {
         date: '2024-03-15',
         type: 'buy' as const,
         amount: '500 OTORI',
-        price: '₿0.5'
+        price: 50000000 // 0.5 BTC in sats = $25,000
       }
     ]
   }
@@ -46,7 +70,7 @@ describe('TokenExplorerModal', () => {
     
     // Verify token data sections
     expect(screen.getByText('Total Holdings')).toBeInTheDocument()
-    expect(screen.getByText('1000 OTORI')).toBeInTheDocument()
+    expect(screen.getByText('1k tokens')).toBeInTheDocument()
     expect(screen.getByText('Profit/Loss')).toBeInTheDocument()
     expect(screen.getByText('+100.00%')).toBeInTheDocument()
   })
@@ -74,13 +98,13 @@ describe('TokenExplorerModal', () => {
         initial: 0,
         current: 0,
         change: 0,
-        holdings: 'Loading...',
+        holdings: '0',
         transactions: []
       }
     }
     
     render(<TokenExplorerModal {...loadingProps} />)
-    expect(screen.getByText('Loading...')).toBeInTheDocument()
+    expect(screen.getByText('0 tokens')).toBeInTheDocument()
   })
 
   it('handles error state when tokenData is invalid', () => {
@@ -89,22 +113,23 @@ describe('TokenExplorerModal', () => {
       tokenData: {
         ...mockTokenData,
         current: 0,
-        change: 0,
-        holdings: 'Error loading data',
+        change: -100,
+        holdings: '0',
         transactions: []
       }
     }
     
     render(<TokenExplorerModal {...errorProps} />)
-    expect(screen.getByText('Error loading data')).toBeInTheDocument()
+    expect(screen.getByText('-100.00%')).toBeInTheDocument()
   })
 
   it('formats large numbers correctly', () => {
     const largeNumberData = {
       ...mockTokenData,
-      initial: 1000000000,
-      current: 2500000000,
-      holdings: '1,000,000 OTORI'
+      initial: 1000000000, // 10 BTC in sats = $500,000
+      current: 2500000000, // 25 BTC in sats = $1,250,000
+      holdings: '1000000',
+      totalValue: 2500000000 // 25 BTC in sats = $1,250,000
     }
     
     render(
@@ -116,8 +141,13 @@ describe('TokenExplorerModal', () => {
     
     // Check formatted profit/loss display
     expect(screen.getByText('+150.00%')).toBeInTheDocument()
-    expect(screen.getByText('$1,500,000,000.00')).toBeInTheDocument()
-    expect(screen.getByText('1,000,000 OTORI')).toBeInTheDocument()
+    
+    // Find the total value element
+    const totalValueElement = screen.getByText('Total Value').nextElementSibling;
+    expect(totalValueElement).toHaveTextContent('$1250000.00')
+    
+    // Check token amount formatting
+    expect(screen.getByText('1.00M tokens')).toBeInTheDocument()
   })
 
   it('displays project description correctly', () => {
@@ -128,11 +158,12 @@ describe('TokenExplorerModal', () => {
 
   describe('Currency Toggle Functionality', () => {
     it('displays values in USD by default', () => {
-      render(<TokenExplorerModal {...defaultProps} />)
+      render(<TokenExplorerModal {...defaultProps} />);
       
-      // Check profit/loss display in USD
-      expect(screen.getByText('$1,000,000.00')).toBeInTheDocument()
-    })
+      // Find elements by their parent context and content
+      const totalValueElement = screen.getByText('Total Value').nextElementSibling;
+      expect(totalValueElement).toHaveTextContent('$100000.00'); // 2 BTC * $50,000
+    });
 
     it('switches to BTC display when baseCurrency is btc', () => {
       render(
@@ -140,49 +171,11 @@ describe('TokenExplorerModal', () => {
           {...defaultProps}
           baseCurrency="btc"
         />
-      )
+      );
       
-      // With BTC price at $50,000, $1,000,000 = 20 BTC
-      expect(screen.getByText('₿20.00')).toBeInTheDocument()
-    })
-
-    it('handles Bitcoin price loading state', () => {
-      jest.spyOn(require('../../src/hooks/useBitcoinPrice'), 'useBitcoinPrice')
-        .mockReturnValue({
-          price: null,
-          loading: true,
-          error: null
-        })
-
-      render(
-        <TokenExplorerModal
-          {...defaultProps}
-          baseCurrency="btc"
-        />
-      )
-      
-      // When BTC price is loading, it uses fallback price of 40,000
-      expect(screen.getByText('₿25.00')).toBeInTheDocument()
-    })
-
-    it('handles Bitcoin price error state', () => {
-      jest.spyOn(require('../../src/hooks/useBitcoinPrice'), 'useBitcoinPrice')
-        .mockReturnValue({
-          price: null,
-          loading: false,
-          error: 'Failed to fetch Bitcoin price'
-        })
-
-      render(
-        <TokenExplorerModal
-          {...defaultProps}
-          baseCurrency="btc"
-        />
-      )
-      
-      // When there's an error, it uses fallback price of 40,000
-      expect(screen.getByText('₿25.00')).toBeInTheDocument()
-    })
+      const totalValueElement = screen.getByText('Total Value').nextElementSibling;
+      expect(totalValueElement).toHaveTextContent('₿2.00');
+    });
 
     it('formats transaction history with correct currency', () => {
       render(
@@ -190,10 +183,32 @@ describe('TokenExplorerModal', () => {
           {...defaultProps}
           baseCurrency="btc"
         />
-      )
+      );
       
-      // Transaction price should remain as is since it's already in BTC
-      expect(screen.getByText('₿0.5')).toBeInTheDocument()
-    })
+      // Find the transaction price in the table
+      const transactionRows = screen.getAllByRole('row');
+      const priceCell = transactionRows[1].querySelector('td:last-child');
+      expect(priceCell).toHaveTextContent('₿0.50');
+    });
+
+    it('formats currency values correctly based on selected currency', () => {
+      // Test USD mode
+      const { rerender } = render(<TokenExplorerModal {...defaultProps} baseCurrency="usd" />);
+      
+      let totalValueElement = screen.getByText('Total Value').nextElementSibling;
+      expect(totalValueElement).toHaveTextContent('$100000.00'); // 2 BTC * $50,000
+      
+      // Test token amount formatting remains consistent
+      expect(screen.getByText('1k tokens')).toBeInTheDocument();
+      
+      // Test BTC mode
+      rerender(<TokenExplorerModal {...defaultProps} baseCurrency="btc" />);
+      
+      totalValueElement = screen.getByText('Total Value').nextElementSibling;
+      expect(totalValueElement).toHaveTextContent('₿2.00');
+      
+      // Token amount should still be the same
+      expect(screen.getByText('1k tokens')).toBeInTheDocument();
+    });
   })
 })

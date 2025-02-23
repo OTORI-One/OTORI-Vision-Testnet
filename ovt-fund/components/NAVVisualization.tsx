@@ -116,7 +116,7 @@ const getInitialTransaction = (tokenAmount: number, pricePerToken: number, curre
     date: formatDate(initialDate),
     type: 'buy' as const,
     amount: new Intl.NumberFormat('en-US').format(tokenAmount),
-    price: formatCurrencyValue(pricePerToken, currency), // Use actual price per token
+    price: pricePerToken // Return raw price in sats
   };
 };
 
@@ -260,7 +260,8 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           current: selectedToken.current,
           change: selectedToken.change,
           address: selectedToken.address || 'bc1p...',
-          holdings: formatValue(selectedToken.current, baseCurrency),
+          holdings: selectedToken.tokenAmount.toString(), // Pass raw token amount for consistent formatting
+          totalValue: selectedToken.current, // Add total value in sats
           transactions: [getInitialTransaction(selectedToken.tokenAmount, selectedToken.pricePerToken, baseCurrency)]
         } : {
           name: '',
@@ -269,7 +270,8 @@ export default function NAVVisualization({ data, totalValue, changePercentage, b
           current: 0,
           change: 0,
           address: '',
-          holdings: '',
+          holdings: '0',
+          totalValue: 0,
           transactions: []
         }}
         baseCurrency={baseCurrency}

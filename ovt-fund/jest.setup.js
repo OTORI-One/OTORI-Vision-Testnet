@@ -1,6 +1,16 @@
 // Learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom'
 
+// Add global fetch polyfill for Node environment
+global.fetch = jest.fn(() =>
+  Promise.resolve({
+    json: () => Promise.resolve({}),
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+  })
+);
+
 // Mock next/router
 jest.mock('next/router', () => ({
   useRouter() {

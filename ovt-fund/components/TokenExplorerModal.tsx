@@ -14,15 +14,30 @@ interface TokenExplorerModalProps {
     change: number;
     address: string;
     holdings: string;
+    totalValue: number;
     transactions: Array<{
       date: string;
       type: 'buy' | 'sell';
       amount: string;
-      price: string;
+      price: number;
     }>;
   };
   baseCurrency?: 'usd' | 'btc';
 }
+
+// Format token amounts consistently across the application
+const formatTokenAmount = (value: string): string => {
+  const numericValue = parseFloat(value.replace(/[^0-9.]/g, ''));
+  if (isNaN(numericValue)) return '0 tokens';
+  
+  if (numericValue >= 1000000) {
+    return `${(numericValue / 1000000).toFixed(2)}M tokens`;
+  }
+  if (numericValue >= 1000) {
+    return `${Math.floor(numericValue / 1000)}k tokens`;
+  }
+  return `${Math.floor(numericValue)} tokens`;
+};
 
 export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCurrency = 'usd' }: TokenExplorerModalProps) {
   const { formatValue } = useOVTClient();
@@ -33,15 +48,7 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
   const formattedInitial = formatValue(tokenData.initial, baseCurrency);
   const formattedCurrent = formatValue(tokenData.current, baseCurrency);
   const formattedProfitLoss = formatValue(Math.abs(profitLoss), baseCurrency);
-
-  // Format holdings to use k instead of M
-  const formatHoldings = (value: string) => {
-    const numericValue = parseFloat(value.replace(/[^0-9.]/g, ''));
-    if (numericValue >= 1000) {
-      return `${(numericValue / 1000).toFixed(0)}k tokens`;
-    }
-    return value;
-  };
+  const formattedTotalValue = formatValue(tokenData.totalValue, baseCurrency);
 
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -106,8 +113,16 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
                     {/* Holdings and P/L */}
                     <div className="mt-4 grid grid-cols-2 gap-4">
                       <div className="bg-gray-50 rounded-lg p-4">
-                        <h4 className="text-sm font-medium text-gray-500">Total Holdings</h4>
-                        <p className="mt-1 text-xl font-semibold">{formatHoldings(tokenData.holdings)}</p>
+                        <div className="space-y-2">
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-500">Total Value</h4>
+                            <p className="text-xl font-semibold">{formattedTotalValue}</p>
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-medium text-gray-500">Total Holdings</h4>
+                            <p className="text-xl font-semibold">{formatTokenAmount(tokenData.holdings)}</p>
+                          </div>
+                        </div>
                       </div>
                       <div className="bg-gray-50 rounded-lg p-4">
                         <h4 className="text-sm font-medium text-gray-500">Profit/Loss</h4>
@@ -144,8 +159,12 @@ export default function TokenExplorerModal({ isOpen, onClose, tokenData, baseCur
                                     {transaction.type}
                                   </span>
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{transaction.amount}</td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">{transaction.price}</td>
+                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                  {formatTokenAmount(transaction.amount)}
+                                </td>
+                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                  {formatValue(transaction.price, baseCurrency)}
+                                </td>
                               </tr>
                             ))}
                           </tbody>

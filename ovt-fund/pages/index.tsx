@@ -139,11 +139,10 @@ export default function Dashboard() {
                       value={buyAmount}
                       onChange={(e) => setBuyAmount(e.target.value)}
                       placeholder="Enter amount"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                       min="0"
-                      step="0.01"
+                      step="1"
                     />
-                    <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
                     disabled={isLoading || !buyAmount}
@@ -170,11 +169,10 @@ export default function Dashboard() {
                       value={sellAmount}
                       onChange={(e) => setSellAmount(e.target.value)}
                       placeholder="Enter amount"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
                       min="0"
-                      step="0.01"
+                      step="1"
                     />
-                    <span className="text-sm text-gray-500">OVT</span>
                   </div>
                   <button 
                     disabled={isLoading || !sellAmount}
