@@ -53,6 +53,34 @@ globs: ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.json", "**/Cargo.toml", "**/*.md
 - Use uniform error handling patterns
 - Reference: @docs/DEV_JOURNAL.md#Frontend-(ovt-fund)
 
+### 5. Value Formatting and Data Flow
+- **Data Flow Principles**:
+  ```typescript
+  // Always pass raw values between components
+  interface TokenData {
+    amount: number;       // Raw numeric value
+    value: number;        // Raw value in sats
+    timestamp: number;    // Unix timestamp
+  }
+  ```
+- **Token Amount Formatting**:
+  - Values ≥ 1M: Use 'M' notation with two decimals
+  - Values ≥ 1k: Use 'k' notation with no decimals
+  - Values < 1k: Show full number
+  - Example: "1.50M tokens", "500k tokens", "750 tokens"
+- **Currency Value Standards**:
+  - BTC ≥ 0.1: Show in BTC with 2 decimals (e.g., "₿0.15")
+  - Sats ≥ 1M: Use 'M' notation (e.g., "1.50M sats")
+  - Sats ≥ 1k: Use 'k' notation (e.g., "500k sats")
+  - Sats < 1k: Show full number (e.g., "750 sats")
+- **Implementation Requirements**:
+  - Store raw values in state/props
+  - Format only at display time
+  - Use shared formatting utilities
+  - Apply consistent standards across all components
+- Reference: @docs/DEV_JOURNAL.md#Value-Formatting-and-Data-Flow-Improvements
+
+
 ## Smart Contract Development
 
 ### 1. Program Structure

@@ -92,6 +92,38 @@ pub mod account_info {
         pub fn vout(&self) -> u32 {
             self.vout
         }
+
+        pub fn validate(&self, min_confirmations: u32) -> Result<(), ProgramError> {
+            // Mock validation that would check Bitcoin network in production
+            if self.txid == [0; 32] {
+                return Err(ProgramError::Custom("Invalid UTXO: zero txid".to_string()));
+            }
+            
+            // In production this would verify against Bitcoin node
+            let mock_confirmations = 6;
+            if mock_confirmations < min_confirmations {
+                return Err(ProgramError::Custom("Insufficient confirmations".to_string()));
+            }
+
+            Ok(())
+        }
+
+        pub fn get_status(&self) -> UtxoStatus {
+            // Mock implementation - in production would check Bitcoin network
+            if self.txid == [0; 32] {
+                UtxoStatus::Invalid
+            } else {
+                UtxoStatus::Active
+            }
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum UtxoStatus {
+        Pending,    // Waiting for confirmations
+        Active,     // Confirmed and spendable  
+        Spent,      // UTXO has been consumed
+        Invalid,    // UTXO was invalidated (e.g., by reorg)
     }
 
     impl BorshSerialize for UtxoMeta {
@@ -171,6 +203,14 @@ pub mod account_info {
             let mut account_data = self.data.borrow_mut();
             *account_data = serialized;  // Replace entire Vec instead of using copy_from_slice
             Ok(())
+        }
+
+        pub fn validate_utxo(&self, min_confirmations: u32) -> Result<(), ProgramError> {
+            self.utxo.validate(min_confirmations)
+        }
+
+        pub fn get_utxo_status(&self) -> UtxoStatus {
+            self.utxo.get_status()
         }
     }
 }

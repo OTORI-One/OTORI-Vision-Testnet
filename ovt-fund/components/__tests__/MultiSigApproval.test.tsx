@@ -79,7 +79,7 @@ describe('MultiSigApproval', () => {
   });
 
   it('allows signing with different admin keys', async () => {
-    render(<MultiSigApproval {...defaultProps} />);
+    const { rerender } = render(<MultiSigApproval {...defaultProps} />);
     
     // First signature
     const signButton = screen.getByText('Sign');
@@ -89,22 +89,30 @@ describe('MultiSigApproval', () => {
     });
     
     expect(mockAdminWallet.signMessage).toHaveBeenCalled();
-    expect(screen.getByText('1/5 signatures collected')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('1/5 signatures collected')).toBeInTheDocument();
+    });
 
     // Switch admin and sign again
     await act(async () => {
       mockAdminWallet.currentAdminKey = '0x222...222';
       (useLaserEyes as jest.Mock).mockReturnValue({
         ...mockAdminWallet,
-        address: '0x222...222'
+        address: '0x222...222',
+        signMessage: mockAdminWallet.signMessage
       });
     });
 
+    rerender(<MultiSigApproval {...defaultProps} />);
+
+    const newSignButton = screen.getByText('Sign');
     await act(async () => {
-      fireEvent.click(signButton);
+      fireEvent.click(newSignButton);
     });
     
-    expect(screen.getByText('2/5 signatures collected')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('2/5 signatures collected')).toBeInTheDocument();
+    });
   });
 
   it('shows complete button when enough signatures are collected', async () => {
