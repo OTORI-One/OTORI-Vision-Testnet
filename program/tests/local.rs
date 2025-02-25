@@ -5,17 +5,18 @@
 /// 2. NAV updates and validation
 /// 3. UTXO handling and state transitions
 /// 4. Admin operations and access control
-use ovt_program::{
-    mock_sdk::{
-        AccountInfo,
-        Pubkey,
-        test_utils::TestClient,
-        AccountMeta,
-        account_info::UtxoMeta,
-    },
-    OVTInstruction,
-    OVTState,
+use program;
+// Import mock_sdk from the correct location
+#[path = "mock_sdk/mock_sdk.rs"]
+mod mock_sdk;
+use mock_sdk::{
+    AccountInfo,
+    Pubkey,
+    test_utils::TestClient,
+    AccountMeta,
+    account_info::UtxoMeta,
 };
+use program::{OVTInstruction, OVTState};
 use std::cell::RefCell;
 use borsh::BorshSerialize;
 
@@ -82,6 +83,7 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
+            utxo: UtxoMeta::from_slice(&[0; 36]),
         });
     }
 
@@ -190,6 +192,7 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
+            utxo: UtxoMeta::from_slice(&[0; 36]),
         });
     }
 
@@ -324,6 +327,7 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
+            utxo: UtxoMeta::from_slice(&[0; 36]),
         });
     }
 

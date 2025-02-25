@@ -9,7 +9,13 @@ use bitcoin::secp256k1::{Secp256k1, Message};
 use bitcoin::{PublicKey, Transaction, TxIn, TxOut};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::hashes::sha256;
-use ovt_program::runes_client::{RunesClient, PortfolioPosition, PositionType, PositionStatus};
+// Import directly from the runes_client.rs file
+mod runes_client {
+    include!("../src/runes_client.rs");
+}
+use runes_client::{RunesClient, PortfolioPosition, PositionType, PositionStatus};
+use bitcoin::key::rand;
+use bitcoin::Amount;
 
 /// Test complete multisig flow with Bitcoin transaction handling
 /// 
@@ -50,7 +56,7 @@ async fn test_multisig_flow() {
     };
 
     let output = TxOut {
-        value: 100_000, // 0.001 BTC
+        value: Amount::from_sat(100_000), // 0.001 BTC
         script_pubkey: bitcoin::ScriptBuf::new(),
     };
 
@@ -153,7 +159,7 @@ async fn test_real_signatures() {
     };
 
     let output = TxOut {
-        value: 50_000, // 0.0005 BTC
+        value: Amount::from_sat(50_000), // 0.0005 BTC
         script_pubkey: bitcoin::ScriptBuf::new(),
     };
 
