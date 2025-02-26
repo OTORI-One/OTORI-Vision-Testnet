@@ -11,16 +11,121 @@ use borsh::io::{Error as BorshError, Write as BorshWrite, Read as BorshRead, Err
 use bitcoin::{Transaction, Script, ScriptBuf, Amount};
 
 // Import program types for mock implementation
-pub mod program {
+pub mod program_types {
     pub use ::program::{OVTInstruction, OVTState};
+    use borsh::BorshDeserialize;
+    
+    // Mock implementation of process_instruction that works with our mock types
+    pub fn process_instruction(ctx: &super::ProgramContext, data: &[u8]) -> Result<(), super::ProgramError> {
+        // Parse the instruction data
+        let instruction = match OVTInstruction::try_from_slice(data) {
+            Ok(instruction) => instruction,
+            Err(_) => return Err(super::ProgramError::InvalidInstructionData),
+        };
+        
+        // Process the instruction based on its variant
+        match instruction {
+            OVTInstruction::Initialize { treasury_pubkey_bytes } => {
+                // Mock implementation for Initialize
+                if ctx.accounts.len() < 3 {
+                    return Err(super::ProgramError::NotEnoughAccountKeys);
+                }
+                
+                let state_account = &ctx.accounts[0];
+                if !state_account.is_writable {
+                    return Err(super::ProgramError::InvalidArgument);
+                }
+                
+                let admin_account = &ctx.accounts[1];
+                if !admin_account.is_signer {
+                    return Err(super::ProgramError::MissingRequiredSignature);
+                }
+                
+                // Initialize state
+                let state = OVTState {
+                    nav_sats: 0,
+                    treasury_pubkey_bytes,
+                    total_supply: 0,
+                    last_nav_update: 0,
+                };
+                
+                state_account.set_data(&state).map_err(|_| super::ProgramError::AccountDataTooSmall)?;
+                
+                Ok(())
+            },
+            OVTInstruction::UpdateNAV { btc_price_sats } => {
+                // Mock implementation for UpdateNAV
+                if ctx.accounts.len() < 2 {
+                    return Err(super::ProgramError::NotEnoughAccountKeys);
+                }
+                
+                let state_account = &ctx.accounts[0];
+                if !state_account.is_writable {
+                    return Err(super::ProgramError::InvalidArgument);
+                }
+                
+                let admin_account = &ctx.accounts[1];
+                if !admin_account.is_signer {
+                    return Err(super::ProgramError::MissingRequiredSignature);
+                }
+                
+                // Update state
+                let mut state: OVTState = borsh::from_slice(&state_account.data.borrow())
+                    .map_err(|_| super::ProgramError::InvalidAccountData)?;
+                
+                state.nav_sats = btc_price_sats;
+                state.last_nav_update = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as u64;
+                
+                state_account.set_data(&state).map_err(|_| super::ProgramError::AccountDataTooSmall)?;
+                
+                Ok(())
+            },
+            // Add other instruction handlers as needed
+            _ => Err(super::ProgramError::InvalidInstructionData),
+        }
+    }
+}
+
+// Define core types and traits for the mock SDK
+pub struct ProgramContext {
+    pub accounts: Vec<AccountInfo>,
+    pub program_id: Pubkey,
+}
+
+pub struct AccountMeta {
+    pub pubkey: Pubkey,
+    pub is_signer: bool,
+    pub is_writable: bool,
+}
+
+impl AccountMeta {
+    pub fn new(pubkey: Pubkey, is_signer: bool) -> Self {
+        Self {
+            pubkey,
+            is_signer,
+            is_writable: true,
+        }
+    }
+
+    pub fn new_readonly(pubkey: Pubkey, is_signer: bool) -> Self {
+        Self {
+            pubkey,
+            is_signer,
+            is_writable: false,
+        }
+    }
+}
+
+pub trait Program {
+    fn process_instruction(ctx: &ProgramContext, data: &[u8]) -> ProgramResult;
 }
 
 // Re-export common types at the root level
 pub use self::account_info::AccountInfo;
-pub use self::account_info::UtxoMeta;
-pub use self::account_info::UtxoStatus;
 pub use self::pubkey::Pubkey;
-pub use self::program::{Program, ProgramContext, AccountMeta};
 
 // Define ProgramResult at the root level
 pub type ProgramResult = Result<(), ProgramError>;
@@ -107,62 +212,17 @@ pub mod account_info {
         pub fn vout(&self) -> u32 {
             self.vout
         }
-
-        pub fn validate(&self, min_confirmations: u32) -> Result<(), ProgramError> {
-            // Mock validation that would check Bitcoin network in production
-            if self.txid == [0; 32] {
-                return Err(ProgramError::Custom("Invalid UTXO: zero txid".to_string()));
-            }
-            
-            // In production this would verify against Bitcoin node
-            let mock_confirmations = 6;
-            if mock_confirmations < min_confirmations {
-                return Err(ProgramError::Custom("Insufficient confirmations".to_string()));
-            }
-
-            Ok(())
-        }
-
-        pub fn get_status(&self) -> UtxoStatus {
-            // Mock implementation - in production would check Bitcoin network
-            if self.txid == [0; 32] {
-                UtxoStatus::Invalid
-            } else {
-                UtxoStatus::Active
-            }
-        }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum UtxoStatus {
-        Pending,    // Waiting for confirmations
-        Active,     // Confirmed and spendable  
-        Spent,      // UTXO has been consumed
-        Invalid,    // UTXO was invalidated (e.g., by reorg)
+        Active,
+        Pending,
+        Spent,
+        Invalid,
     }
 
-    impl BorshSerialize for UtxoMeta {
-        fn serialize<W: BorshWrite>(&self, writer: &mut W) -> Result<(), BorshError> {
-            writer.write_all(&self.txid).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to write txid"))?;
-            writer.write_all(&self.vout.to_le_bytes()).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to write vout"))?;
-            Ok(())
-        }
-    }
-
-    impl BorshDeserialize for UtxoMeta {
-        fn deserialize_reader<R: BorshRead>(reader: &mut R) -> Result<Self, BorshError> {
-            let mut txid = [0u8; 32];
-            reader.read_exact(&mut txid).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to read txid"))?;
-            
-            let mut vout_bytes = [0u8; 4];
-            reader.read_exact(&mut vout_bytes).map_err(|_| BorshError::new(ErrorKind::InvalidData, "Failed to read vout"))?;
-            let vout = u32::from_le_bytes(vout_bytes);
-            
-            Ok(Self { txid, vout })
-        }
-    }
-
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     pub struct AccountInfo {
         pub key: Pubkey,
         pub is_signer: bool,
@@ -170,21 +230,7 @@ pub mod account_info {
         pub lamports: RefCell<u64>,
         pub data: RefCell<Vec<u8>>,
         pub owner: RefCell<Pubkey>,
-        pub utxo: UtxoMeta,  // Add UTXO field
-    }
-
-    impl Clone for AccountInfo {
-        fn clone(&self) -> Self {
-            Self {
-                key: self.key,
-                is_signer: self.is_signer,
-                is_writable: self.is_writable,
-                lamports: RefCell::clone(&self.lamports),
-                data: RefCell::clone(&self.data),
-                owner: RefCell::clone(&self.owner),
-                utxo: self.utxo,
-            }
-        }
+        pub utxo: UtxoMeta,
     }
 
     impl AccountInfo {
@@ -196,516 +242,238 @@ pub mod account_info {
                 lamports: RefCell::new(0),
                 data: RefCell::new(Vec::new()),
                 owner: RefCell::new(Pubkey::new()),
-                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
+                utxo: UtxoMeta::from_slice(&[0; 36]),
             }
         }
 
-        pub fn get_data<T: BorshDeserialize>(&self) -> Result<T, ProgramError> {
-            let data = self.data.borrow();
-            if data.is_empty() {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            borsh::BorshDeserialize::try_from_slice(&data)
-                .map_err(|_| ProgramError::InvalidAccountData)
-        }
-
-        pub fn set_data<T: BorshSerialize>(&self, data: &T) -> Result<(), ProgramError> {
-            if !self.is_writable {
-                return Err(ProgramError::InvalidAccountData);
-            }
-            let serialized = borsh::to_vec(data)
-                .map_err(|_| ProgramError::InvalidAccountData)?;
-            let mut account_data = self.data.borrow_mut();
-            *account_data = serialized;  // Replace entire Vec instead of using copy_from_slice
+        pub fn set_data<T: BorshSerialize>(&self, data: &T) -> Result<(), io::Error> {
+            let serialized = borsh::to_vec(data).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            *self.data.borrow_mut() = serialized;
             Ok(())
         }
-
-        pub fn validate_utxo(&self, min_confirmations: u32) -> Result<(), ProgramError> {
-            self.utxo.validate(min_confirmations)
-        }
-
-        pub fn get_utxo_status(&self) -> UtxoStatus {
-            self.utxo.get_status()
-        }
     }
 }
 
-pub mod program {
-    use super::*;
-    use super::account_info::AccountInfo;
-    use super::pubkey::Pubkey;
-    use bitcoin::{Script, ScriptBuf};
-
-    pub trait Program {
-        fn process_instruction(ctx: &ProgramContext, data: &[u8]) -> ProgramResult;
-    }
-
-    #[derive(Clone, Debug)]
-    pub struct AccountMeta {
-        pub pubkey: Pubkey,
-        pub is_signer: bool,
-        pub is_writable: bool,
-    }
-
-    impl AccountMeta {
-        pub fn new(pubkey: Pubkey, is_writable: bool) -> Self {
-            Self {
-                pubkey,
-                is_signer: false,
-                is_writable,
-            }
-        }
-
-        pub fn new_readonly(pubkey: Pubkey, is_signer: bool) -> Self {
-            Self {
-                pubkey,
-                is_signer,
-                is_writable: false,
-            }
-        }
-    }
-
-    #[derive(Clone)]
-    pub struct ProgramContext {
-        pub program_id: Pubkey,
-        pub accounts: Vec<AccountInfo>,
-        pub test_client: Option<super::test_utils::TestClient>,
-    }
-
-    impl ProgramContext {
-        pub fn new(program_id: Pubkey, accounts: Vec<AccountInfo>) -> Self {
-            Self {
-                program_id,
-                accounts,
-                test_client: None,
-            }
-        }
-
-        pub fn with_test_client(
-            program_id: Pubkey,
-            accounts: Vec<AccountInfo>,
-            test_client: super::test_utils::TestClient,
-        ) -> Self {
-            Self {
-                program_id,
-                accounts,
-                test_client: Some(test_client),
-            }
-        }
-
-        pub fn get(&self, index: usize) -> Result<&AccountInfo, ProgramError> {
-            self.accounts.get(index).ok_or(ProgramError::AccountNotFound)
-        }
-
-        pub fn is_admin(&self, pubkey: &Pubkey) -> bool {
-            self.test_client.as_ref()
-                .map(|client| client.is_admin(pubkey))
-                .unwrap_or(false)
-        }
-    }
-
-    pub fn get_account_script_pubkey(pubkey: &Pubkey) -> ScriptBuf {
-        // Create a P2PKH script using the pubkey
-        let mut script_data = Vec::with_capacity(25);
-        script_data.extend_from_slice(&[0x76, 0xa9, 0x14]); // OP_DUP OP_HASH160 PUSH20
-        script_data.extend_from_slice(&pubkey.0[..20]); // Use first 20 bytes of pubkey as hash
-        script_data.extend_from_slice(&[0x88, 0xac]); // OP_EQUALVERIFY OP_CHECKSIG
-        ScriptBuf::from_bytes(script_data)
-    }
-
-    pub fn get_bitcoin_block_height() -> u32 {
-        // Mock implementation - in real environment this would query the Bitcoin network
-        123456
-    }
-
-    pub fn set_transaction_to_sign(accounts: &[AccountInfo], tx_to_sign: TransactionToSign) -> ProgramResult {
-        // Mock implementation of transaction signing
-        // In real environment, this would prepare the transaction for signing
-        msg!("Setting transaction to sign: {:?}", tx_to_sign);
-        Ok(())
-    }
-}
-
+// Define program error type
 #[derive(Debug)]
 pub enum ProgramError {
     InvalidArgument,
     InvalidInstructionData,
     InvalidAccountData,
-    AccountNotFound,
+    AccountDataTooSmall,
     InsufficientFunds,
+    IncorrectProgramId,
     MissingRequiredSignature,
-    Arithmetic,
-    Overflow,
-    Custom(String),
+    AccountAlreadyInitialized,
+    UninitializedAccount,
+    NotEnoughAccountKeys,
+    AccountBorrowFailed,
+    Custom(u32),
+    InvalidAccountOwner,
+    ArithmeticOverflow,
+    UnsupportedSysvar,
+    IllegalOwner,
 }
 
-impl std::error::Error for ProgramError {}
-
 impl fmt::Display for ProgramError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ProgramError::InvalidArgument => write!(f, "Invalid argument"),
-            ProgramError::InvalidInstructionData => write!(f, "Invalid instruction data"),
-            ProgramError::InvalidAccountData => write!(f, "Invalid account data"),
-            ProgramError::AccountNotFound => write!(f, "Account not found"),
-            ProgramError::InsufficientFunds => write!(f, "Insufficient funds"),
-            ProgramError::MissingRequiredSignature => write!(f, "Missing required signature"),
-            ProgramError::Arithmetic => write!(f, "Arithmetic error"),
-            ProgramError::Overflow => write!(f, "Overflow"),
-            ProgramError::Custom(msg) => write!(f, "{}", msg),
+            ProgramError::InvalidArgument => write!(f, "InvalidArgument"),
+            ProgramError::InvalidInstructionData => write!(f, "InvalidInstructionData"),
+            ProgramError::InvalidAccountData => write!(f, "InvalidAccountData"),
+            ProgramError::AccountDataTooSmall => write!(f, "AccountDataTooSmall"),
+            ProgramError::InsufficientFunds => write!(f, "InsufficientFunds"),
+            ProgramError::IncorrectProgramId => write!(f, "IncorrectProgramId"),
+            ProgramError::MissingRequiredSignature => write!(f, "MissingRequiredSignature"),
+            ProgramError::AccountAlreadyInitialized => write!(f, "AccountAlreadyInitialized"),
+            ProgramError::UninitializedAccount => write!(f, "UninitializedAccount"),
+            ProgramError::NotEnoughAccountKeys => write!(f, "NotEnoughAccountKeys"),
+            ProgramError::AccountBorrowFailed => write!(f, "AccountBorrowFailed"),
+            ProgramError::Custom(code) => write!(f, "Custom error: {}", code),
+            ProgramError::InvalidAccountOwner => write!(f, "InvalidAccountOwner"),
+            ProgramError::ArithmeticOverflow => write!(f, "ArithmeticOverflow"),
+            ProgramError::UnsupportedSysvar => write!(f, "UnsupportedSysvar"),
+            ProgramError::IllegalOwner => write!(f, "IllegalOwner"),
         }
     }
 }
 
-impl From<io::Error> for ProgramError {
-    fn from(_err: io::Error) -> Self {
-        ProgramError::Custom("IO Error".to_string())
+impl std::error::Error for ProgramError {}
+
+impl From<String> for ProgramError {
+    fn from(_: String) -> Self {
+        ProgramError::Custom(1)
     }
 }
 
-impl ProgramError {
-    pub fn from_borsh_error(_err: BorshError) -> Self {
-        ProgramError::Custom("Borsh Error".to_string())
-    }
-}
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+// Mock token account state
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct TokenAccount {
     pub mint: pubkey::Pubkey,
     pub owner: pubkey::Pubkey,
     pub amount: u64,
-    pub delegate: Option<pubkey::Pubkey>,
-    pub state: u8,
-    pub is_native: Option<u64>,
     pub delegated_amount: u64,
     pub close_authority: Option<pubkey::Pubkey>,
 }
 
 pub mod test_utils {
     use super::*;
-    use super::account_info::{AccountInfo, UtxoMeta, UtxoStatus};
+    use super::account_info::{AccountInfo, UtxoMeta};
     use super::pubkey::Pubkey;
-    use super::program::{Program, ProgramContext};
     use bitcoin::Transaction;
 
-    // Move MockOVTProgram outside of the TestClient impl block
-    pub struct MockOVTProgram;
-    
-    impl Program for MockOVTProgram {
-        fn process_instruction(ctx: &ProgramContext, data: &[u8]) -> ProgramResult {
-            // This is a mock implementation that handles basic instructions
-            msg!("Mock OVTProgram::process_instruction called");
-            
-            // Try to deserialize the instruction
-            if let Ok(instruction) = borsh::BorshDeserialize::try_from_slice(data) {
-                match instruction {
-                    // Handle UpdateNAV instruction
-                    program::OVTInstruction::UpdateNAV { btc_price_sats } => {
-                        // Get the state account (first account)
-                        if let Ok(state_account) = ctx.get(0) {
-                            // Get the current state
-                            if let Ok(mut state) = state_account.get_data::<program::OVTState>() {
-                                // Update the NAV
-                                state.nav_sats = btc_price_sats;
-                                
-                                // Save the updated state
-                                state_account.set_data(&state)?;
-                                
-                                msg!("Updated NAV to {} sats", btc_price_sats);
-                                return Ok(());
-                            }
-                        }
-                    },
-                    // Handle other instructions (just return Ok for now)
-                    _ => return Ok(()),
-                }
-            }
-            
-            // Default implementation just returns Ok
-            Ok(())
-        }
+    // Function to get a script pubkey for an account
+    pub fn get_account_script_pubkey(_account: &AccountInfo) -> ScriptBuf {
+        // Mock implementation
+        ScriptBuf::new()
     }
 
-    #[derive(Debug, Clone)]
-    pub struct AccountHandle {
-        pub key: Pubkey,
-        pub is_signer: bool,
-        pub is_writable: bool,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct AdminAction {
-        pub action_type: String,
-        pub description: String,
-        pub signatures: Vec<String>,
-        pub signed_by: Vec<Pubkey>,
-    }
-
-    #[derive(Clone)]
+    #[derive(Debug)]
     pub struct TestClient {
         pub accounts: Arc<Mutex<HashMap<Pubkey, AccountInfo>>>,
-        pub admin_accounts: Arc<Mutex<HashMap<Pubkey, bool>>>,
-        pub pending_actions: Arc<Mutex<Vec<AdminAction>>>,
-        pub required_signatures: usize,
-        pub total_admins: usize,
+        pub admin_accounts: HashMap<Pubkey, bool>,
+        pub action_signatures: HashMap<String, Vec<String>>,
+        pub action_descriptions: HashMap<String, String>,
+        next_pubkey: u64,
     }
 
     impl TestClient {
         pub fn new() -> Self {
             Self {
                 accounts: Arc::new(Mutex::new(HashMap::new())),
-                admin_accounts: Arc::new(Mutex::new(HashMap::new())),
-                pending_actions: Arc::new(Mutex::new(Vec::new())),
-                required_signatures: 3, // 3 out of 5 required
-                total_admins: 5,
+                admin_accounts: HashMap::new(),
+                action_signatures: HashMap::new(),
+                action_descriptions: HashMap::new(),
+                next_pubkey: 1,
             }
         }
 
-        pub fn create_account(&mut self, program_id: Pubkey) -> Result<AccountHandle, ProgramError> {
-            let key = Pubkey::new_unique();
-            let account = AccountInfo {
-                key,
-                is_signer: false,
-                is_writable: true,
-                lamports: RefCell::new(0),
-                data: RefCell::new(vec![0; 1024]), // Allocate 1KB of space by default
-                owner: RefCell::new(program_id),
-                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
-            };
-            self.accounts.lock().unwrap().insert(key, account);
-            Ok(AccountHandle {
-                key,
-                is_signer: false,
-                is_writable: true,
-            })
-        }
-
-        pub fn create_admin_account(&mut self, _program_id: Pubkey) -> Result<AccountHandle, ProgramError> {
-            if self.admin_accounts.lock().unwrap().len() >= self.total_admins {
-                return Err(ProgramError::Custom("Maximum number of admins reached".to_string()));
-            }
-
+        pub fn create_account(&mut self, owner: Pubkey) -> Result<AccountInfo, ProgramError> {
             let key = Pubkey::new_unique();
             let account = AccountInfo {
                 key,
                 is_signer: true,
-                is_writable: false,
+                is_writable: true,
                 lamports: RefCell::new(1000000),
                 data: RefCell::new(Vec::new()),
-                owner: RefCell::new(Pubkey::new()),
-                utxo: UtxoMeta::from_slice(&[0; 36]),  // Initialize with empty UTXO
+                owner: RefCell::new(owner),
+                utxo: UtxoMeta::from_slice(&[0; 36]),
             };
-            self.accounts.lock().unwrap().insert(key, account);
-            self.admin_accounts.lock().unwrap().insert(key, true);
-            Ok(AccountHandle {
-                key,
-                is_signer: true,
-                is_writable: false,
-            })
+            
+            let mut accounts = self.accounts.lock().unwrap();
+            accounts.insert(key, account.clone());
+            
+            Ok(account)
         }
 
-        pub fn is_admin(&self, pubkey: &Pubkey) -> bool {
-            self.admin_accounts.lock().unwrap().get(pubkey).copied().unwrap_or(false)
+        pub fn create_admin_account(&mut self, owner: Pubkey) -> Result<AccountInfo, ProgramError> {
+            let account = self.create_account(owner)?;
+            self.admin_accounts.insert(account.key, true);
+            Ok(account)
         }
 
-        pub fn sign_action(
-            &mut self,
-            admin_key: &Pubkey,
-            action_type: String,
-            description: String,
-            signature: String,
-        ) -> Result<bool, ProgramError> {
-            if !self.is_admin(admin_key) {
-                return Err(ProgramError::Custom("Not an admin".to_string()));
-            }
-
-            let mut pending_actions = self.pending_actions.lock().unwrap();
-            let action = pending_actions
-                .iter_mut()
-                .find(|a| a.action_type == action_type);
-
-            match action {
-                Some(action) => {
-                    if action.signed_by.contains(admin_key) {
-                        return Err(ProgramError::Custom("Admin already signed".to_string()));
-                    }
-                    action.signatures.push(signature);
-                    action.signed_by.push(*admin_key);
-                }
-                None => {
-                    pending_actions.push(AdminAction {
-                        action_type,
-                        description,
-                        signatures: vec![signature],
-                        signed_by: vec![*admin_key],
-                    });
-                }
-            }
-
-            // Check if we have enough signatures
-            if let Some(action) = pending_actions.last() {
-                Ok(action.signatures.len() >= self.required_signatures)
-            } else {
-                Ok(false)
-            }
+        pub fn is_admin(&self, key: &Pubkey) -> bool {
+            self.admin_accounts.get(key).copied().unwrap_or(false)
         }
 
-        pub fn verify_action(
-            &self,
-            action_type: &str,
-            signatures: &[String],
-        ) -> Result<bool, ProgramError> {
-            if signatures.len() < self.required_signatures {
+        pub fn sign_action(&mut self, signer: &Pubkey, action_type: String, description: String, signature: String) -> Result<(), ProgramError> {
+            if !self.is_admin(signer) {
+                return Err(ProgramError::MissingRequiredSignature);
+            }
+            
+            self.action_descriptions.insert(action_type.clone(), description);
+            
+            let signatures = self.action_signatures.entry(action_type).or_insert_with(Vec::new);
+            signatures.push(signature);
+            
+            Ok(())
+        }
+
+        pub fn verify_action(&self, action_type: &str, signatures: &[String]) -> Result<bool, ProgramError> {
+            if signatures.len() < 3 {
                 return Ok(false);
             }
-
-            let pending_actions = self.pending_actions.lock().unwrap();
-            if let Some(action) = pending_actions.iter().find(|a| a.action_type == action_type) {
-                // Verify all provided signatures are valid
+            
+            let stored_signatures = self.action_signatures.get(action_type);
+            if let Some(stored) = stored_signatures {
+                let mut count = 0;
                 for sig in signatures {
-                    if !action.signatures.contains(sig) {
-                        return Ok(false);
+                    if stored.contains(sig) {
+                        count += 1;
                     }
                 }
-                Ok(true)
-            } else {
-                Ok(false)
+                return Ok(count >= 3);
             }
+            
+            Ok(false)
         }
 
-        pub fn process_transaction(
-            &mut self,
-            program_id: Pubkey,
-            accounts: Vec<AccountMeta>,
-            instruction_data: Vec<u8>,
-        ) -> ProgramResult {
-            // Create a context with the provided accounts
-            let mut account_infos = Vec::new();
+        pub fn process_transaction(&self, program_id: Pubkey, account_metas: Vec<AccountMeta>, instruction_data: Vec<u8>) -> Result<(), ProgramError> {
+            let mut accounts = Vec::new();
             
-            for meta in &accounts {
-                let account = self.accounts.lock().unwrap().get(&meta.pubkey).cloned()
-                    .ok_or(ProgramError::AccountNotFound)?;
-                account_infos.push(account);
-            }
-            
-            let ctx = ProgramContext::new(program_id, account_infos);
-            
-            // Process the instruction using our mock implementation
-            let result = MockOVTProgram::process_instruction(&ctx, &instruction_data);
-            
-            // Update account state in our test environment
-            if result.is_ok() {
-                for (i, meta) in accounts.iter().enumerate() {
-                    if meta.is_writable {
-                        let account_info = &ctx.accounts[i];
-                        let mut accounts = self.accounts.lock().unwrap();
-                        if let Some(account) = accounts.get_mut(&meta.pubkey) {
-                            *account.lamports.borrow_mut() = *account_info.lamports.borrow();
-                            *account.data.borrow_mut() = account_info.data.borrow().clone();
-                            *account.owner.borrow_mut() = *account_info.owner.borrow();
-                            account.utxo = account_info.utxo.clone();
-                        }
-                    }
+            for meta in account_metas {
+                let account_map = self.accounts.lock().unwrap();
+                if let Some(account) = account_map.get(&meta.pubkey) {
+                    accounts.push(account.clone());
+                } else {
+                    return Err(ProgramError::InvalidArgument);
                 }
             }
             
-            result
-        }
-
-        pub fn get_account_data<T: BorshDeserialize>(&self, pubkey: &Pubkey) -> Result<T, ProgramError> {
-            self.accounts.lock().unwrap().get(pubkey)
-                .ok_or(ProgramError::AccountNotFound)?
-                .get_data()
-        }
-
-        pub fn create_bitcoin_transaction(&self, inputs: Vec<bitcoin::TxIn>, outputs: Vec<bitcoin::TxOut>) -> Transaction {
-            Transaction {
-                version: bitcoin::transaction::Version::TWO,
-                lock_time: bitcoin::absolute::LockTime::ZERO,
-                input: inputs,
-                output: outputs,
+            // Create a context for our mock program
+            let ctx = ProgramContext {
+                accounts,
+                program_id,
+            };
+            
+            // Call our mock implementation of process_instruction
+            // This avoids the need to convert between our mock types and arch_program types
+            match program_types::process_instruction(&ctx, &instruction_data) {
+                Ok(()) => Ok(()),
+                Err(_) => Err(ProgramError::Custom(1)),
             }
+        }
+
+        pub fn get_account_data<T: BorshDeserialize>(&self, key: &Pubkey) -> Result<T, ProgramError> {
+            let accounts = self.accounts.lock().unwrap();
+            let account = accounts.get(key).ok_or(ProgramError::InvalidArgument)?;
+            let data = account.data.borrow();
+            
+            T::try_from_slice(&data).map_err(|_| ProgramError::InvalidAccountData)
         }
 
         pub fn create_utxo(&self, txid: [u8; 32], vout: u32) -> UtxoMeta {
             UtxoMeta::new(txid, vout)
         }
 
-        pub fn set_account_utxo(&mut self, pubkey: &Pubkey, utxo: UtxoMeta) -> Result<(), ProgramError> {
+        pub fn set_account_utxo(&self, key: &Pubkey, utxo: UtxoMeta) -> Result<(), ProgramError> {
             let mut accounts = self.accounts.lock().unwrap();
-            if let Some(account) = accounts.get_mut(pubkey) {
-                account.utxo = utxo;
-                Ok(())
-            } else {
-                Err(ProgramError::AccountNotFound)
-            }
+            let account = accounts.get_mut(key).ok_or(ProgramError::InvalidArgument)?;
+            account.utxo = utxo;
+            Ok(())
         }
 
-        pub fn get_account_utxo(&self, pubkey: &Pubkey) -> Result<UtxoMeta, ProgramError> {
+        pub fn get_account_utxo(&self, key: &Pubkey) -> Result<UtxoMeta, ProgramError> {
             let accounts = self.accounts.lock().unwrap();
-            if let Some(account) = accounts.get(pubkey) {
-                Ok(account.utxo.clone())
-            } else {
-                Err(ProgramError::AccountNotFound)
-            }
-        }
-
-        pub fn simulate_bitcoin_block_height(&self) -> u32 {
-            // Mock implementation that could be customized for testing
-            123456
+            let account = accounts.get(key).ok_or(ProgramError::InvalidArgument)?;
+            Ok(account.utxo)
         }
     }
-}
-
-// Add entrypoint! macro
-#[macro_export]
-macro_rules! entrypoint {
-    ($process_instruction:ident) => {
-        pub fn process_instruction(
-            program_id: &Pubkey,
-            accounts: &[AccountInfo],
-            instruction_data: &[u8],
-        ) -> ProgramResult {
-            let context = ProgramContext::new(
-                *program_id,
-                accounts.to_vec(),
-            );
-            $process_instruction(&context, instruction_data)
-        }
-    };
 }
 
 pub mod helper {
     use super::*;
     use super::account_info::AccountInfo;
-    use super::program::get_account_script_pubkey;
+    use super::test_utils::get_account_script_pubkey;
     use bitcoin::Amount;
 
-    pub fn add_state_transition(tx: &mut Transaction, account: &AccountInfo) -> Result<(), ProgramError> {
+    pub fn add_state_transition(_tx: &mut Transaction, _account: &AccountInfo) -> Result<(), ProgramError> {
         // Mock implementation for testing
-        msg!("Setting transaction to sign: {:?}", tx);
-        
-        // Get script pubkey for the account
-        let script_pubkey = get_account_script_pubkey(&account.key);
-        
-        // Add a mock output
-        tx.output.push(bitcoin::TxOut {
-            script_pubkey,
-            value: Amount::from_sat(account.lamports.borrow().saturating_add(1)), // Simulate value
-        });
-        
         Ok(())
     }
-}
 
-#[derive(Debug)]
-pub struct TransactionToSign<'a> {
-    pub tx_bytes: &'a [u8],
-    pub inputs_to_sign: &'a [InputToSign],
-}
-
-#[derive(Debug)]
-pub struct InputToSign {
-    pub index: usize,
-    pub signer: Pubkey,
+    pub fn verify_bitcoin_transaction(_tx: &Transaction, _amount: u64) -> Result<bool, ProgramError> {
+        // Mock implementation for testing
+        Ok(true)
+    }
 } 

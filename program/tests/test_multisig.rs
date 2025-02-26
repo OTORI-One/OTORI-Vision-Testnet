@@ -10,10 +10,7 @@ use bitcoin::{PublicKey, Transaction, TxIn, TxOut};
 use bitcoin::hashes::Hash as BitcoinHash;
 use bitcoin::hashes::sha256;
 // Import directly from the runes_client.rs file
-mod runes_client {
-    include!("../src/runes_client.rs");
-}
-use runes_client::{RunesClient, PortfolioPosition, PositionType, PositionStatus};
+use program::runes_client::{RunesClient, PortfolioPosition, PositionType, PositionStatus};
 use bitcoin::key::rand;
 use bitcoin::Amount;
 

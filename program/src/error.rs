@@ -1,5 +1,5 @@
+use arch_program::program_error::ProgramError;
 use thiserror::Error;
-use crate::mock_sdk::ProgramError;
 
 #[derive(Error, Debug)]
 pub enum OVTError {
@@ -59,10 +59,56 @@ pub enum OVTError {
 
     #[error("UTXO verification failed")]
     UTXOVerificationFailed,
+
+    #[error("Invalid UTXO")]
+    InvalidUTXO,
+
+    #[error("Insufficient confirmations")]
+    InsufficientConfirmations,
+
+    #[error("UTXO already spent")]
+    UTXOSpent,
+
+    #[error("Invalid transaction")]
+    InvalidTransaction,
+
+    #[error("Invalid signature")]
+    InvalidSignature,
+
+    #[error("Invalid admin action")]
+    InvalidAdminAction,
 }
 
 impl From<OVTError> for ProgramError {
     fn from(e: OVTError) -> Self {
-        ProgramError::Custom(format!("{:?}", e))
+        // Convert the error to a u32 code
+        let code = match e {
+            OVTError::InvalidAuthority => 1000,
+            OVTError::InvalidSAFEId => 1001,
+            OVTError::ArithmeticOverflow => 1002,
+            OVTError::InvalidTokenAccount => 1003,
+            OVTError::InvalidMetadataAccount => 1004,
+            OVTError::InvalidMintAccount => 1005,
+            OVTError::InvalidTreasuryAccount => 1006,
+            OVTError::InvalidOracleAccount => 1007,
+            OVTError::SAFENotFound => 1008,
+            OVTError::SAFEAlreadyConverted => 1009,
+            OVTError::SAFENotUnlocked => 1010,
+            OVTError::ProgramError(_) => 1011,
+            OVTError::InvalidBitcoinPayment => 1012,
+            OVTError::InvalidNAVUpdate => 1013,
+            OVTError::InsufficientFunds => 1014,
+            OVTError::InvalidTreasuryKey => 1015,
+            OVTError::InvalidSupplyChange => 1016,
+            OVTError::InvalidTimestamp => 1017,
+            OVTError::UTXOVerificationFailed => 1018,
+            OVTError::InvalidUTXO => 1019,
+            OVTError::InsufficientConfirmations => 1020,
+            OVTError::UTXOSpent => 1021,
+            OVTError::InvalidTransaction => 1022,
+            OVTError::InvalidSignature => 1023,
+            OVTError::InvalidAdminAction => 1024,
+        };
+        ProgramError::Custom(code)
     }
 } 

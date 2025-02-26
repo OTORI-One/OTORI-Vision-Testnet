@@ -1,13 +1,15 @@
-use crate::mock_sdk::{
+use arch_program::{
+    program_error::ProgramError,
+    entrypoint::ProgramResult,
     pubkey::Pubkey,
-    program::{Program, ProgramContext, ProgramResult, AccountMeta, Instruction},
-    test_utils::TestClient,
-    ProgramError,
+    account::AccountInfo,
+    program::{Program, Context as ProgramContext},
+    instruction::{AccountMeta, Instruction},
 };
 use borsh::BorshSerialize;
 use std::result::Result;
 
-use crate::{OVTInstruction, SAFEData};
+use crate::{OVTInstruction, OVTState};
 
 pub type ClientResult<T> = Result<T, ProgramError>;
 
@@ -210,7 +212,7 @@ impl<'a> OVTClient<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock_sdk::{test_utils::*, TokenAccount};
+    use crate::tests::mock_sdk::{test_utils::TestClient, TokenAccount};
 
     #[test]
     fn test_buy_and_sell_ovt() {

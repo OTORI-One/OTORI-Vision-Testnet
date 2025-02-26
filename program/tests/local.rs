@@ -14,7 +14,6 @@ use mock_sdk::{
     Pubkey,
     test_utils::TestClient,
     AccountMeta,
-    account_info::UtxoMeta,
 };
 use program::{OVTInstruction, OVTState};
 use std::cell::RefCell;
@@ -44,7 +43,7 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
     
     // Verify default UTXO state
     let default_utxo = client.get_account_utxo(&state_account.key)?;
-    assert_eq!(default_utxo, UtxoMeta::from_slice(&[0; 36]), "Default UTXO should be zero-initialized");
+    assert_eq!(default_utxo, mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]), "Default UTXO should be zero-initialized");
 
     // Create test UTXO and set it
     let test_txid = [1u8; 32];
@@ -83,7 +82,7 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
-            utxo: UtxoMeta::from_slice(&[0; 36]),
+            utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
 
@@ -192,7 +191,7 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
-            utxo: UtxoMeta::from_slice(&[0; 36]),
+            utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
 
@@ -248,24 +247,23 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
     let nav_signatures: Vec<String> = (0..3).map(|i| format!("nav_sig_{}", i)).collect();
     assert!(client.verify_action(&nav_action_type, &nav_signatures)?);
 
+    // Update NAV through proper instruction flow
     let instruction = OVTInstruction::UpdateNAV {
         btc_price_sats: new_nav,
     };
 
-    // Make sure state_account is writable and authority is a signer
     client.process_transaction(
         program_id,
         vec![
-            AccountMeta::new(state_account.key, true),  // writable = true
-            AccountMeta::new_readonly(admin_accounts[0].key, true),  // is_signer = true
+            AccountMeta::new(state_account.key, true),
+            AccountMeta::new_readonly(admin_accounts[0].key, true),
         ],
         borsh::to_vec(&instruction)?,
     )?;
 
-    // Verify NAV was updated
+    // Verify NAV was updated correctly
     let state: OVTState = client.get_account_data(&state_account.key)?;
-    println!("Final NAV verification: {}", state.nav_sats);
-    assert_eq!(state.nav_sats, new_nav);
+    assert_eq!(state.nav_sats, new_nav, "NAV was not updated correctly");
 
     Ok(())
 }
@@ -327,7 +325,7 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
             lamports: RefCell::new(1),
             data: RefCell::new(Vec::new()),
             owner: RefCell::new(program_id),
-            utxo: UtxoMeta::from_slice(&[0; 36]),
+            utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
 
