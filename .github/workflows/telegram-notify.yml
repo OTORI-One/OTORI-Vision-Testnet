@@ -11,9 +11,10 @@ jobs:
         with:
           to: ${{ secrets.TG_CHAT_ID }}      # Group Chat ID (e.g., -1001234567890)
           token: ${{ secrets.TG_BOT_TOKEN }}  # Bot token from BotFather
+          format: markdown
           message: |
-            **Message: ${{ github.event.head_commit.message }}**
-            **Branch:** ${{ github.ref_name }}
-            **Repository:** ${{ github.repository.branch }}
+            *Message: ${{ github.event.head_commit.message }}*
+            *Branch:* ${{ github.ref_name }}
+            *Repository:* ${{ github.repository.branch }}
             Actor: ${{ github.actor }}
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
