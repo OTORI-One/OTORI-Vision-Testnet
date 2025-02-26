@@ -10,6 +10,7 @@ use bitcoin::{
 };
 use crate::bitcoin::utxo::{UtxoMeta, UtxoStatus};
 use tokio::test;
+use std::num::NonZeroUsize;
 
 use crate::bitcoin_rpc::{BitcoinRpcClient, BitcoinRpcConfig, BitcoinRpcError};
 
@@ -177,4 +178,87 @@ async fn test_error_handling() {
     
     let result = client.validate_utxo(&test_utxo).await;
     assert!(matches!(result, Err(BitcoinRpcError::InsufficientConfirmations { .. })));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bitcoin::cache::UtxoCacheConfig;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_cached_utxo_status() {
+        let config = BitcoinRpcConfig::default();
+        let cache_config = UtxoCacheConfig {
+            max_size: NonZeroUsize::new(100).unwrap(),
+            refresh_interval: Duration::from_secs(1),
+            invalid_ttl: Duration::from_secs(2),
+        };
+        
+        let client = BitcoinRpcClient::with_cache_config(config, cache_config);
+        
+        // Create test UTXO
+        let utxo = UtxoMeta::new(
+            "test_txid_for_cache".to_string(),
+            0,
+            10000,
+        );
+        
+        // First call should cache the result
+        let status1 = client.get_utxo_status(&utxo).await.unwrap();
+        
+        // Second call should return cached result
+        let status2 = client.get_utxo_status(&utxo).await.unwrap();
+        assert_eq!(status1, status2);
+        
+        // Wait for cache to expire
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        
+        // This call should refresh the cache
+        let status3 = client.get_utxo_status(&utxo).await.unwrap();
+        
+        // Verify cache stats
+        let stats = client.get_cache_stats().await;
+        assert_eq!(stats.total_entries, 1);
+    }
+
+    #[tokio::test]
+    async fn test_cache_reorg_handling() {
+        let config = BitcoinRpcConfig::default();
+        let cache_config = UtxoCacheConfig {
+            max_size: NonZeroUsize::new(100).unwrap(),
+            refresh_interval: Duration::from_secs(1),
+            invalid_ttl: Duration::from_secs(2),
+        };
+        
+        let client = BitcoinRpcClient::with_cache_config(config, cache_config);
+        
+        // Create and cache some UTXOs
+        let utxo1 = UtxoMeta::new(
+            "test_txid_1".to_string(),
+            0,
+            10000,
+        );
+        
+        let utxo2 = UtxoMeta::new(
+            "test_txid_2".to_string(),
+            1,
+            20000,
+        );
+        
+        // Cache the UTXOs
+        client.get_utxo_status(&utxo1).await.unwrap();
+        client.get_utxo_status(&utxo2).await.unwrap();
+        
+        // Verify cache has entries
+        let stats_before = client.get_cache_stats().await;
+        assert_eq!(stats_before.total_entries, 2);
+        
+        // Simulate reorg
+        client.handle_reorg(100).await;
+        
+        // Verify cache was cleared
+        let stats_after = client.get_cache_stats().await;
+        assert_eq!(stats_after.total_entries, 0);
+    }
 } 

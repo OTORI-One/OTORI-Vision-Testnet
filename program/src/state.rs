@@ -34,6 +34,16 @@ pub struct OVTState {
     pub total_supply: u64,
     /// Last NAV update timestamp
     pub last_nav_update: u64,
+    /// New fields for Arch Network integration
+    pub network_status: NetworkStatus,
+    pub last_sync_height: u64,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Clone, Debug, PartialEq, Eq)]
+pub enum NetworkStatus {
+    Syncing,
+    Active,
+    Error(String),
 }
 
 impl OVTState {
@@ -104,6 +114,10 @@ impl Program for OVTProgram {
 }
 
 impl OVTProgram {
+    pub fn new() -> Self {
+        Self
+    }
+
     fn process_initialize(ctx: &Context, treasury_pubkey_bytes: [u8; 33]) -> Result<(), ProgramError> {
         let state_info = ctx.get(0)?;
         let authority_info = ctx.get(1)?;
@@ -128,6 +142,8 @@ impl OVTProgram {
             treasury_pubkey_bytes,
             total_supply: 0,
             last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
         };
 
         initialize_account(&ctx.program_id, state_info, &state)?;

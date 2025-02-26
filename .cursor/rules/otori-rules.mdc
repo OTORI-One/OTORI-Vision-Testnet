@@ -282,3 +282,70 @@ NODE_ENV=
 - Maintain traceability between tasks and implementations
 - Document completion dates for major milestones
 - Follow priority guidelines from @docs/BACKLOG.md#Priority-Guidelines
+
+## Infrastructure Scaling Guidelines
+
+### 1. Service Abstraction Layer
+- Implement provider-agnostic interfaces for all blockchain interactions:
+  ```typescript
+  interface BlockchainProvider {
+    queryUtxos(address: string): Promise<UtxoSet>;
+    submitTransaction(tx: Transaction): Promise<TxResult>;
+    subscribeToMempool(callback: MempoolHandler): Subscription;
+  }
+  ```
+- Maintain separation between business logic and blockchain communication
+- Document all integration points and expected behaviors
+- Reference: @docs/DEV_JOURNAL.md#Infrastructure-Scaling
+
+### 2. Configuration Management
+- Define infrastructure configuration schema:
+  ```env
+  # Provider Configuration
+  BLOCKCHAIN_PROVIDER=local|maestro
+  PROVIDER_API_KEY=
+  PROVIDER_ENDPOINT=
+  
+  # Service Configuration
+  MEMPOOL_MONITORING=enabled|disabled
+  EVENT_SUBSCRIPTIONS=enabled|disabled
+  TX_MANAGER_MODE=standard|turbo
+  ```
+- Implement feature flags for gradual service adoption
+- Document configuration dependencies and defaults
+
+### 3. Monitoring and Metrics
+- Track key performance indicators:
+  ```typescript
+  interface ProviderMetrics {
+    queryLatency: number;
+    txSubmissionTime: number;
+    mempoolSyncDelay: number;
+    errorRate: Record<string, number>;
+  }
+  ```
+- Implement comprehensive logging for all blockchain interactions
+- Store historical performance data for migration planning
+- Reference: @docs/DEV_JOURNAL.md#Performance-Monitoring
+
+### 4. Migration Strategy
+- Maintain dual-provider capability during transition
+- Document provider-specific behaviors and differences
+- Implement gradual rollout strategy:
+  1. Monitoring integration
+  2. Read-only operations
+  3. Transaction submission
+  4. Full service adoption
+- Reference: @docs/DEV_JOURNAL.md#Migration-Planning
+
+### 5. Cost Optimization
+- Track usage metrics for each service component
+- Implement request batching and caching strategies
+- Document cost implications of different scaling approaches
+- Reference: @docs/DEV_JOURNAL.md#Resource-Optimization
+
+### 6. Testing Requirements
+- Maintain provider-specific test suites
+- Implement comparison testing between providers
+- Document performance benchmarks and acceptance criteria
+- Reference: @docs/DEV_JOURNAL.md#Integration-Testing

@@ -8,6 +8,7 @@ use bitcoin::{
 };
 use arch_program::program_error::ProgramError;
 use crate::bitcoin::utxo::{UtxoMeta, UtxoStatus};
+use crate::bitcoin::cache::{UtxoCache, UtxoCacheConfig};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -76,16 +77,30 @@ struct ElectrsOutput {
     scriptpubkey: String,
 }
 
+#[derive(Debug, Clone)]
 pub struct BitcoinRpcClient {
     config: BitcoinRpcConfig,
-    http_client: reqwest::Client,
+    #[cfg(feature = "client")]
+    http_client: Client,
+    cache: UtxoCache,
 }
 
 impl BitcoinRpcClient {
     pub fn new(config: BitcoinRpcConfig) -> Self {
         Self {
+            #[cfg(feature = "client")]
+            http_client: Client::new(),
+            cache: UtxoCache::new(UtxoCacheConfig::default()),
             config,
-            http_client: reqwest::Client::new(),
+        }
+    }
+
+    pub fn with_cache_config(config: BitcoinRpcConfig, cache_config: UtxoCacheConfig) -> Self {
+        Self {
+            #[cfg(feature = "client")]
+            http_client: Client::new(),
+            cache: UtxoCache::new(cache_config),
+            config,
         }
     }
 
@@ -121,6 +136,12 @@ impl BitcoinRpcClient {
     }
 
     pub async fn get_utxo_status(&self, utxo: &UtxoMeta) -> Result<UtxoStatus, BitcoinRpcError> {
+        // Try to get from cache first
+        if let Ok(status) = self.cache.get_utxo_status(self, utxo).await {
+            return Ok(status);
+        }
+        
+        // If not in cache or needs refresh, fetch from RPC
         let url = format!("{}/tx/{}/outspend/{}", self.config.electrs_endpoint, utxo.txid, utxo.vout);
         
         let response = self.http_client
@@ -144,14 +165,16 @@ impl BitcoinRpcClient {
             .await
             .map_err(|e| BitcoinRpcError::InvalidResponse)?;
             
-        if status.spent {
-            Ok(UtxoStatus::Spent)
+        let utxo_status = if status.spent {
+            UtxoStatus::Spent
         } else {
             match status.confirmations {
-                Some(conf) if conf >= self.config.min_confirmations => Ok(UtxoStatus::Active),
-                Some(_) | None => Ok(UtxoStatus::Pending),
+                Some(conf) if conf >= self.config.min_confirmations => UtxoStatus::Active,
+                Some(_) | None => UtxoStatus::Pending,
             }
-        }
+        };
+
+        Ok(utxo_status)
     }
 
     pub async fn get_confirmations(&self, txid: &str) -> Result<u32, BitcoinRpcError> {
@@ -234,5 +257,20 @@ impl BitcoinRpcClient {
             .map_err(|_| BitcoinRpcError::RpcError("Invalid response format".to_string()))?;
             
         Ok(txid)
+    }
+
+    /// Get cache statistics
+    pub async fn get_cache_stats(&self) -> CacheStats {
+        self.cache.get_stats().await
+    }
+
+    /// Manually trigger cache cleanup
+    pub async fn cleanup_cache(&self) {
+        self.cache.cleanup().await;
+    }
+
+    /// Handle reorg by invalidating affected cache entries
+    pub async fn handle_reorg(&self, height: u32) {
+        self.cache.handle_reorg(height).await;
     }
 } 

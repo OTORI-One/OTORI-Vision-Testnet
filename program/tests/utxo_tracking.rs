@@ -38,13 +38,8 @@ async fn test_utxo_creation_and_validation() {
     let vout = 0;
     
     // Create the UTXO metadata
-    let utxo = UtxoMeta {
-        txid: txid_hex.to_string(),
-        vout,
-        amount_sats: 10000,
-        script_pubkey: "script".to_string(),
-        confirmations: 0,
-    };
+    let mut utxo = UtxoMeta::new(txid_hex.to_string(), vout, 10000);
+    utxo.script_pubkey = "script".to_string();
     
     // Verify UTXO metadata is correct
     assert_eq!(utxo.txid, txid_hex, "UTXO txid should match input");
@@ -59,13 +54,9 @@ async fn test_utxo_creation_and_validation() {
     
     // Test invalid UTXO (non-existent transaction)
     let invalid_txid = "invalid_txid_that_does_not_exist_in_blockchain";
-    let invalid_utxo = UtxoMeta {
-        txid: invalid_txid.to_string(),
-        vout,
-        amount_sats: 10000,
-        script_pubkey: "script".to_string(),
-        confirmations: 0,
-    };
+    let mut invalid_utxo = UtxoMeta::new(invalid_txid.to_string(), vout, 10000);
+    invalid_utxo.script_pubkey = "script".to_string();
+
     let invalid_result = validate_utxo(&bitcoin_rpc, &invalid_utxo).await;
     assert!(invalid_result.is_err(), "Invalid UTXO should fail validation");
 }
@@ -81,13 +72,8 @@ async fn test_utxo_state_transitions() {
     // Create test UTXO
     let txid = "test_txid_for_state_transitions";
     let vout = 1;
-    let utxo = UtxoMeta {
-        txid: txid.to_string(),
-        vout,
-        amount_sats: 20000,
-        script_pubkey: "script".to_string(),
-        confirmations: 0,
-    };
+    let mut utxo = UtxoMeta::new(txid.to_string(), vout, 20000);
+    utxo.script_pubkey = "script".to_string();
     
     // Create UTXO tracker with initial state
     let mut tracker = UtxoTracker::new();
@@ -132,21 +118,12 @@ async fn test_utxo_reorg_handling() {
     let txid2 = "test_txid_for_reorg_pending";
     let vout = 0;
     
-    let utxo1 = UtxoMeta {
-        txid: txid1.to_string(),
-        vout,
-        amount_sats: 30000,
-        script_pubkey: "script".to_string(),
-        confirmations: 6,
-    };
+    let mut utxo1 = UtxoMeta::new(txid1.to_string(), vout, 30000);
+    utxo1.script_pubkey = "script".to_string();
+    utxo1.confirmations = 6;
     
-    let utxo2 = UtxoMeta {
-        txid: txid2.to_string(),
-        vout,
-        amount_sats: 40000,
-        script_pubkey: "script".to_string(),
-        confirmations: 0,
-    };
+    let mut utxo2 = UtxoMeta::new(txid2.to_string(), vout, 40000);
+    utxo2.script_pubkey = "script".to_string();
     
     // Create UTXO tracker with initial UTXOs
     let mut tracker = UtxoTracker::new();
