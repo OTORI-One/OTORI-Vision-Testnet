@@ -14,7 +14,7 @@ jobs:
           format: markdown
           message: |
             Message ✉️: *${{ github.event.head_commit.message }}*
-            Branch 🫒: *${{ github.ref_name }}*
-            *Repository:* ${{ github.repository }}
+            Branch 🌿: *${{ github.ref_name }}*
+            Repository: ${{ github.repository }}
             Actor: ${{ github.actor }}
             Commit: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
