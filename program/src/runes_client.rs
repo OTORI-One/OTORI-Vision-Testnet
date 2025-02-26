@@ -202,7 +202,7 @@ impl RunesClient {
             amount: 1000000,
             price_per_token: 100,
             currency_spent: 100000000,
-            transaction_id: Some("mock_txid".to_string()),
+            transaction_id: Some("0101010101010101010101010101010101010101010101010101010101010101".to_string()),
             safe_inscription_id: None,
             entry_timestamp: 1677649200,
             position_type: PositionType::PostTGE,

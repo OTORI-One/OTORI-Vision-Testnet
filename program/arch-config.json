@@ -1,0 +1,33 @@
+{
+  "network": "testnet",
+  "validator": {
+    "endpoint": "http://localhost:9002",
+    "timeout": 30000
+  },
+  "bitcoin": {
+    "network": "testnet",
+    "rpc": {
+      "host": "127.0.0.1",
+      "port": 18443,
+      "user": "user",
+      "pass": "pass"
+    }
+  },
+  "electrs": {
+    "http": "http://localhost:3002",
+    "rpc": {
+      "host": "127.0.0.1",
+      "port": 60401
+    }
+  },
+  "program": {
+    "id": "ovt_program",
+    "version": "0.1.0",
+    "features": ["program"]
+  },
+  "deployment": {
+    "confirmations": 1,
+    "fee_rate": 1,
+    "timeout": 600000
+  }
+} 

@@ -7,48 +7,50 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize Bitcoin RPC client
+    // Initialize Bitcoin RPC client configuration
     let config = BitcoinRpcConfig {
-        rpc_endpoint: "http://localhost:8332".to_string(),
-        rpc_auth: Some("user:password".to_string()),
-        electrs_endpoint: "http://localhost:3000".to_string(),
-        network: bitcoin::Network::Regtest,
-        min_confirmations: 6,
+        endpoint: "localhost".to_string(),
+        port: 8332,
+        username: "user".to_string(),
+        password: "password".to_string(),
     };
     
-    let rpc_client = Arc::new(BitcoinRpcClient::new(config));
+    // Create RPC client by using the config values directly
+    let rpc_client = Arc::new(BitcoinRpcClient {
+        endpoint: config.endpoint,
+        port: config.port,
+        username: config.username,
+        password: config.password,
+    });
     
-    // Create UTXO tracker
+    // Create UTXO tracker with 6 confirmations required
     let mut tracker = UtxoTracker::new(rpc_client.clone(), 6);
     
-    // Example: Add a UTXO to track
-    let example_utxo = UtxoMeta {
-        txid: "abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1".to_string(),
+    // Add a sample UTXO
+    let utxo = UtxoMeta {
+        txid: "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
         vout: 0,
-        amount_sats: 100000, // 0.001 BTC
-        script_pubkey: "0014d85c2e4ef14448a3f3c7a90063f73d9440f8b56d".to_string(),
+        amount_sats: 100000,
+        script_pubkey: "76a914000000000000000000000000000000000000000088ac".to_string(),
         confirmations: 0,
     };
     
-    // Add UTXO to tracker with initial Pending status
-    tracker.add_utxo(example_utxo, UtxoStatus::Pending).await;
+    // Add UTXO with Pending status
+    tracker.add_utxo(utxo.clone(), UtxoStatus::Pending).await;
+    println!("Added UTXO to tracker");
     
-    // Update confirmations for all tracked UTXOs
+    // Update confirmations for tracked UTXOs
     tracker.update_confirmations().await;
+    println!("Updated UTXO confirmations");
     
-    // Check for chain reorganizations
-    tracker.handle_chain_reorg().await;
+    // Get all UTXOs and calculate total value
+    let all_utxos = tracker.get_all_utxos().await;
+    let total_value: u64 = all_utxos.iter().map(|(meta, _)| meta.amount_sats).sum();
+    println!("Total value of UTXOs: {} sats", total_value);
     
-    // Get all active UTXOs
-    let active_utxos = tracker.get_utxos_by_status(UtxoStatus::Active).await;
-    println!("Active UTXOs: {}", active_utxos.len());
-    
-    // Get total value of active UTXOs
-    let total_value = tracker.get_total_value_by_status(UtxoStatus::Active).await;
-    println!("Total value of active UTXOs: {} sats", total_value);
-    
-    // Mark a UTXO as spent
-    tracker.mark_utxo_spent("abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abc1").await;
+    // Mark UTXO as spent
+    tracker.mark_utxo_spent(&utxo.txid).await;
+    println!("Marked UTXO as spent");
     
     Ok(())
 } 

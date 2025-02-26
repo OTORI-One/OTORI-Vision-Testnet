@@ -80,7 +80,6 @@ globs: ["**/*.rs", "**/*.ts", "**/*.tsx", "**/*.json", "**/Cargo.toml", "**/*.md
   - Apply consistent standards across all components
 - Reference: @docs/DEV_JOURNAL.md#Value-Formatting-and-Data-Flow-Improvements
 
-
 ## Smart Contract Development
 
 ### 1. Program Structure
@@ -203,7 +202,7 @@ NODE_ENV=
 ### 1. Task Management
 - Keep @docs/BACKLOG.md updated with all tasks and their status
 - Follow status indicators: 🔴 Not Started | 🟡 In Progress | 🟢 Completed | ⭕ Blocked | 🔵 In Review
-- Adhere to priority levels: 🏃‍♂️ P0 (Critical) | 🚶‍♂️ P1 (High) | 🧍‍♂️ P2 (Medium) | 🪑 P3 (Low)
+- Adhere to priority levels: 🏃‍♂️ P0 (Critical) | ��‍♂️ P1 (High) | 🧍‍♂️ P2 (Medium) | 🪑 P3 (Low)
 - Update task dependencies in the mermaid graph
 - Reference: @docs/BACKLOG.md#Status-&-Priority-Legend
 
