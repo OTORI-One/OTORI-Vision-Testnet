@@ -16,8 +16,10 @@ use mock_sdk::{
     AccountMeta,
 };
 use program::{OVTInstruction, OVTState};
+use program::state::NetworkStatus;
 use std::cell::RefCell;
 use borsh::BorshSerialize;
+use std::sync::Arc;
 
 /// Test program initialization with proper UTXO handling
 /// 
@@ -66,10 +68,12 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
             treasury_pubkey_bytes: [0u8; 33],
             total_supply: 0,
             last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
         };
         let serialized = borsh::to_vec(&initial_state)?;
-        account.data = RefCell::new(serialized);
-        account.owner = RefCell::new(program_id);
+        account.data = Arc::new(RefCell::new(serialized));
+        account.owner = Arc::new(RefCell::new(program_id));
     }
 
     // Create system program account
@@ -79,9 +83,9 @@ fn test_initialize() -> Result<(), Box<dyn std::error::Error>> {
             key: system_program,
             is_signer: false,
             is_writable: false,
-            lamports: RefCell::new(1),
-            data: RefCell::new(Vec::new()),
-            owner: RefCell::new(program_id),
+            lamports: Arc::new(RefCell::new(1)),
+            data: Arc::new(RefCell::new(Vec::new())),
+            owner: Arc::new(RefCell::new(program_id)),
             utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
@@ -176,9 +180,12 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
             treasury_pubkey_bytes: [0u8; 33],
             total_supply: 0,
             last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
         };
-        account.set_data(&initial_state)?;
-        *account.owner.borrow_mut() = program_id;
+        let serialized = borsh::to_vec(&initial_state)?;
+        account.data = Arc::new(RefCell::new(serialized));
+        account.owner = Arc::new(RefCell::new(program_id));
     }
 
     // Create system program account
@@ -188,9 +195,9 @@ fn test_nav_update() -> Result<(), Box<dyn std::error::Error>> {
             key: system_program,
             is_signer: false,
             is_writable: false,
-            lamports: RefCell::new(1),
-            data: RefCell::new(Vec::new()),
-            owner: RefCell::new(program_id),
+            lamports: Arc::new(RefCell::new(1)),
+            data: Arc::new(RefCell::new(Vec::new())),
+            owner: Arc::new(RefCell::new(program_id)),
             utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
@@ -310,9 +317,12 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
             treasury_pubkey_bytes: [0u8; 33],
             total_supply: 0,
             last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
         };
-        account.set_data(&initial_state)?;
-        *account.owner.borrow_mut() = program_id;
+        let serialized = borsh::to_vec(&initial_state)?;
+        account.data = Arc::new(RefCell::new(serialized));
+        account.owner = Arc::new(RefCell::new(program_id));
     }
 
     // Create system program account
@@ -322,9 +332,9 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
             key: system_program,
             is_signer: false,
             is_writable: false,
-            lamports: RefCell::new(1),
-            data: RefCell::new(Vec::new()),
-            owner: RefCell::new(program_id),
+            lamports: Arc::new(RefCell::new(1)),
+            data: Arc::new(RefCell::new(Vec::new())),
+            owner: Arc::new(RefCell::new(program_id)),
             utxo: mock_sdk::account_info::UtxoMeta::from_slice(&[0; 36]),
         });
     }
@@ -367,6 +377,8 @@ fn test_nav_validation() -> Result<(), Box<dyn std::error::Error>> {
         treasury_pubkey_bytes: [0u8; 33],
         total_supply: 1_000_000,
         last_nav_update: 0,
+        network_status: NetworkStatus::Syncing,
+        last_sync_height: 0,
     };
 
     {

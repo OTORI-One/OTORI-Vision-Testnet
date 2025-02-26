@@ -9,10 +9,12 @@ use bitcoin::hashes::{sha256, Hash};
 use std::sync::atomic::{AtomicU64, Ordering};
 use borsh::io::{Error as BorshError, Write as BorshWrite, Read as BorshRead, ErrorKind};
 use bitcoin::{Transaction, Script, ScriptBuf, Amount};
+use program::state::NetworkStatus;
 
 // Import program types for mock implementation
 pub mod program_types {
     pub use ::program::{OVTInstruction, OVTState};
+    pub use ::program::state::NetworkStatus;
     use borsh::BorshDeserialize;
     
     // Mock implementation of process_instruction that works with our mock types
@@ -47,6 +49,8 @@ pub mod program_types {
                     treasury_pubkey_bytes,
                     total_supply: 0,
                     last_nav_update: 0,
+                    network_status: NetworkStatus::Syncing,
+                    last_sync_height: 0,
                 };
                 
                 state_account.set_data(&state).map_err(|_| super::ProgramError::AccountDataTooSmall)?;
@@ -227,22 +231,30 @@ pub mod account_info {
         pub key: Pubkey,
         pub is_signer: bool,
         pub is_writable: bool,
-        pub lamports: RefCell<u64>,
-        pub data: RefCell<Vec<u8>>,
-        pub owner: RefCell<Pubkey>,
+        pub lamports: Arc<RefCell<u64>>,
+        pub data: Arc<RefCell<Vec<u8>>>,
+        pub owner: Arc<RefCell<Pubkey>>,
         pub utxo: UtxoMeta,
     }
 
     impl AccountInfo {
-        pub fn new(key: Pubkey, is_signer: bool, is_writable: bool) -> Self {
+        pub fn new(
+            key: Pubkey,
+            is_signer: bool,
+            is_writable: bool,
+            lamports: u64,
+            data: Vec<u8>,
+            owner: Pubkey,
+            utxo: UtxoMeta,
+        ) -> Self {
             Self {
                 key,
                 is_signer,
                 is_writable,
-                lamports: RefCell::new(0),
-                data: RefCell::new(Vec::new()),
-                owner: RefCell::new(Pubkey::new()),
-                utxo: UtxoMeta::from_slice(&[0; 36]),
+                lamports: Arc::new(RefCell::new(lamports)),
+                data: Arc::new(RefCell::new(data)),
+                owner: Arc::new(RefCell::new(owner)),
+                utxo,
             }
         }
 
@@ -354,9 +366,9 @@ pub mod test_utils {
                 key,
                 is_signer: true,
                 is_writable: true,
-                lamports: RefCell::new(1000000),
-                data: RefCell::new(Vec::new()),
-                owner: RefCell::new(owner),
+                lamports: Arc::new(RefCell::new(1000000)),
+                data: Arc::new(RefCell::new(Vec::new())),
+                owner: Arc::new(RefCell::new(owner)),
                 utxo: UtxoMeta::from_slice(&[0; 36]),
             };
             
@@ -410,11 +422,19 @@ pub mod test_utils {
 
         pub fn process_transaction(&self, program_id: Pubkey, account_metas: Vec<AccountMeta>, instruction_data: Vec<u8>) -> Result<(), ProgramError> {
             let mut accounts = Vec::new();
+            let account_map = self.accounts.lock().unwrap();
             
             for meta in account_metas {
-                let account_map = self.accounts.lock().unwrap();
                 if let Some(account) = account_map.get(&meta.pubkey) {
-                    accounts.push(account.clone());
+                    accounts.push(AccountInfo {
+                        key: account.key,
+                        is_signer: meta.is_signer,
+                        is_writable: meta.is_writable,
+                        lamports: account.lamports.clone(),
+                        data: account.data.clone(),
+                        owner: account.owner.clone(),
+                        utxo: account.utxo,
+                    });
                 } else {
                     return Err(ProgramError::InvalidArgument);
                 }
@@ -427,11 +447,7 @@ pub mod test_utils {
             };
             
             // Call our mock implementation of process_instruction
-            // This avoids the need to convert between our mock types and arch_program types
-            match program_types::process_instruction(&ctx, &instruction_data) {
-                Ok(()) => Ok(()),
-                Err(_) => Err(ProgramError::Custom(1)),
-            }
+            program_types::process_instruction(&ctx, &instruction_data)
         }
 
         pub fn get_account_data<T: BorshDeserialize>(&self, key: &Pubkey) -> Result<T, ProgramError> {
@@ -476,4 +492,35 @@ pub mod helper {
         // Mock implementation for testing
         Ok(true)
     }
+}
+
+pub fn process_transaction(
+    client: &test_utils::TestClient,
+    instruction_data: &[u8],
+    accounts: &[Pubkey],
+    signers: &[Pubkey],
+) -> Result<(), ProgramError> {
+    let accounts_map = client.accounts.lock().unwrap();
+    let mut account_infos: Vec<AccountInfo> = Vec::new();
+
+    for account in accounts {
+        if let Some(acc) = accounts_map.get(account) {
+            account_infos.push(AccountInfo {
+                key: acc.key,
+                is_signer: signers.contains(&acc.key),
+                is_writable: acc.is_writable,
+                lamports: Arc::clone(&acc.lamports),
+                data: Arc::clone(&acc.data),
+                owner: Arc::clone(&acc.owner),
+                utxo: acc.utxo.clone(),
+            });
+        }
+    }
+
+    let ctx = ProgramContext {
+        accounts: account_infos,
+        program_id: accounts[0],
+    };
+
+    program_types::process_instruction(&ctx, instruction_data)
 } 
