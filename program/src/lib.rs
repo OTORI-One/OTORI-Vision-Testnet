@@ -84,6 +84,7 @@ use state::Program;
 pub use bitcoin::{
     rpc::{BitcoinRpcClient, BitcoinRpcConfig, BitcoinRpcError},
     utxo::{UtxoMeta, UtxoStatus, TreasuryPayment},
+    mock::{MockBitcoinNode, MockBitcoinRpcClient},
 };
 pub use state::{OVTState, OVTProgram};
 pub use instructions::OVTInstruction;
@@ -99,6 +100,5 @@ pub fn process_instruction<'a>(
     accounts: &'a [AccountInfo<'a>],
     instruction_data: &[u8],
 ) -> Result<(), ProgramError> {
-    let ctx = Context::new(program_id, accounts);
-    OVTProgram::process_instruction(&ctx, instruction_data)
+    OVTProgram::process_instruction(program_id, accounts, instruction_data)
 } 

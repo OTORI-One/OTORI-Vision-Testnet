@@ -1,33 +1,51 @@
 {
-  "network": "testnet",
-  "validator": {
-    "endpoint": "http://localhost:9002",
-    "timeout": 30000
-  },
-  "bitcoin": {
-    "network": "testnet",
-    "rpc": {
-      "host": "127.0.0.1",
-      "port": 18443,
-      "user": "user",
-      "pass": "pass"
-    }
-  },
-  "electrs": {
-    "http": "http://localhost:3002",
-    "rpc": {
-      "host": "127.0.0.1",
-      "port": 60401
-    }
-  },
+  "name": "OTORI Vision Token",
+  "version": "1.0.0",
+  "description": "On-chain VC fund on Bitcoin built on Arch Network",
   "program": {
-    "id": "ovt_program",
-    "version": "0.1.0",
-    "features": ["program"]
+    "id": "ovt1111111111111111111111111111111111111111",
+    "entrypoint": "program/src/arch_program.rs",
+    "accounts": [
+      {
+        "name": "state",
+        "type": "OVTState",
+        "seed": "ovt_state",
+        "size": 256
+      },
+      {
+        "name": "treasury",
+        "type": "TreasuryAccount",
+        "seed": "treasury",
+        "size": 128
+      }
+    ]
   },
-  "deployment": {
-    "confirmations": 1,
-    "fee_rate": 1,
-    "timeout": 600000
+  "network": {
+    "testnet": {
+      "endpoint": "https://api.testnet.archnetwork.io",
+      "bitcoin_network": "testnet4",
+      "bitcoin_rpc": "http://localhost:18332",
+      "electrs_endpoint": "http://localhost:50001"
+    }
+  },
+  "build": {
+    "target": "wasm32-unknown-unknown",
+    "features": ["testnet"],
+    "debug": true
+  },
+  "test": {
+    "bitcoin_regtest": true,
+    "mock_bitcoin_rpc": false,
+    "coverage": true
+  },
+  "security": {
+    "multisig_threshold": 3,
+    "multisig_total": 5,
+    "admin_pubkeys": []
+  },
+  "monitoring": {
+    "log_level": "info",
+    "metrics_enabled": true,
+    "error_reporting": true
   }
 } 

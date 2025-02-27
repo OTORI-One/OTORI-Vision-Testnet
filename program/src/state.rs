@@ -3,17 +3,15 @@ use arch_program::{
     program_error::ProgramError,
     pubkey::Pubkey,
     msg,
+    program_pack::{Pack, Sealed},
 };
 
-use crate::Context;
-use crate::AccountInfoExt;
-use crate::Clock;
-use bitcoin::PublicKey;
 use borsh::{BorshDeserialize, BorshSerialize};
+use std::{rc::Rc, cell::RefCell, sync::LazyLock};
 
 // Define the Program trait
 pub trait Program {
-    fn process_instruction(ctx: &Context, data: &[u8]) -> Result<(), ProgramError>;
+    fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Result<(), ProgramError>;
 }
 
 use crate::error::OVTError;
@@ -22,6 +20,18 @@ use crate::utils::{create_program_account, initialize_account};
 
 #[derive(BorshSerialize, BorshDeserialize)]
 pub struct OVTProgram;
+
+impl OVTProgram {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for OVTProgram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Program state storing NAV and treasury data
 #[derive(BorshSerialize, BorshDeserialize, Clone, Debug)]
@@ -34,8 +44,9 @@ pub struct OVTState {
     pub total_supply: u64,
     /// Last NAV update timestamp
     pub last_nav_update: u64,
-    /// New fields for Arch Network integration
+    /// Network status
     pub network_status: NetworkStatus,
+    /// Last synced Bitcoin block height
     pub last_sync_height: u64,
 }
 
@@ -46,183 +57,253 @@ pub enum NetworkStatus {
     Error(String),
 }
 
+impl Sealed for OVTState {}
+
+impl Pack for OVTState {
+    const LEN: usize = std::mem::size_of::<Self>();
+
+    fn pack_into_slice(&self, dst: &mut [u8]) {
+        let data = borsh::to_vec(self).unwrap();
+        dst[..data.len()].copy_from_slice(&data);
+    }
+
+    fn unpack_from_slice(src: &[u8]) -> Result<Self, ProgramError> {
+        borsh::from_slice(src).map_err(|_| ProgramError::InvalidAccountData)
+    }
+}
+
 impl OVTState {
-    pub fn set_treasury_pubkey(&mut self, pubkey: &PublicKey) {
-        self.treasury_pubkey_bytes.copy_from_slice(&pubkey.to_bytes());
-    }
-
-    pub fn get_treasury_pubkey(&self) -> Result<PublicKey, ProgramError> {
-        PublicKey::from_slice(&self.treasury_pubkey_bytes)
-            .map_err(|_| OVTError::InvalidTreasuryKey.into())
-    }
-
-    pub fn validate_nav_update(&self, new_nav_sats: u64) -> Result<(), ProgramError> {
-        if self.nav_sats > 0 {
-            let change_ratio = (new_nav_sats as f64) / (self.nav_sats as f64);
-            
-            // For significant changes (>100%), log for monitoring
-            if change_ratio > 2.0 || change_ratio < 0.5 {
-                msg!("Significant NAV change detected: {}%", (change_ratio - 1.0) * 100.0);
-            }
-            
-            // Only reject extremely large changes (>4000% or <-95%)
-            let initial_nav = 1_000_000; // Initial NAV from test setup
-            let cumulative_ratio = (new_nav_sats as f64) / (initial_nav as f64);
-            if cumulative_ratio > 41.0 || cumulative_ratio < 0.05 {
-                msg!("Rejecting NAV update - cumulative change too large: {}%", (cumulative_ratio - 1.0) * 100.0);
-                return Err(OVTError::InvalidNAVUpdate.into());
-            }
-        }
-        Ok(())
-    }
-
-    pub fn validate_supply_change(&self, new_supply: u64) -> Result<(), ProgramError> {
-        // Ensure supply changes are within acceptable limits
-        if self.total_supply > 0 {
-            let change_ratio = (new_supply as f64) / (self.total_supply as f64);
-            if change_ratio > 1.1 || change_ratio < 0.9 {
-                return Err(OVTError::InvalidSupplyChange.into());
-            }
-        }
-        Ok(())
-    }
-
-    pub fn validate_treasury(&self) -> Result<(), ProgramError> {
-        // Ensure treasury key is valid
-        self.get_treasury_pubkey()?;
-        Ok(())
-    }
-}
-
-impl Program for OVTProgram {
-    fn process_instruction(ctx: &Context, data: &[u8]) -> Result<(), ProgramError> {
-        let instruction = OVTInstruction::try_from_slice(data)
-            .map_err(|_| ProgramError::InvalidInstructionData)?;
-        
-        match instruction {
-            OVTInstruction::Initialize { treasury_pubkey_bytes } => {
-                Self::process_initialize(ctx, treasury_pubkey_bytes)
-            }
-            OVTInstruction::UpdateNAV { btc_price_sats } => {
-                Self::process_update_nav(ctx, btc_price_sats)
-            }
-            OVTInstruction::BuybackBurn { payment_txid, payment_amount_sats } => {
-                Self::process_buyback_burn(ctx, &payment_txid, payment_amount_sats)
-            }
-        }
-    }
-}
-
-impl OVTProgram {
-    pub fn new() -> Self {
-        Self
-    }
-
-    fn process_initialize(ctx: &Context, treasury_pubkey_bytes: [u8; 33]) -> Result<(), ProgramError> {
-        let state_info = ctx.get(0)?;
-        let authority_info = ctx.get(1)?;
-        let system_program = ctx.get(2)?;
-
-        if !authority_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
-        }
-
-        // Create and initialize state account
-        create_program_account(
-            &ctx.program_id,
-            state_info,
-            authority_info,
-            std::mem::size_of::<OVTState>() as u64,
-            system_program,
-        )?;
-
-        // Initialize new state
-        let state = OVTState {
+    pub fn new(treasury_pubkey_bytes: [u8; 33]) -> Self {
+        Self {
             nav_sats: 0,
             treasury_pubkey_bytes,
             total_supply: 0,
             last_nav_update: 0,
             network_status: NetworkStatus::Syncing,
             last_sync_height: 0,
-        };
-
-        initialize_account(&ctx.program_id, state_info, &state)?;
-        Ok(())
+        }
     }
 
-    fn process_update_nav(ctx: &Context, btc_price_sats: u64) -> Result<(), ProgramError> {
-        let state_info = ctx.get(0)?;
-        let authority_info = ctx.get(1)?;
-        let clock_info = ctx.get(2)?;
-
-        if !authority_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
+    pub fn validate_nav_update(&self, new_nav_sats: u64) -> Result<(), ProgramError> {
+        // Prevent zero NAV
+        if new_nav_sats == 0 {
+            return Err(OVTError::InvalidNAVUpdate.into());
         }
 
-        msg!("Starting NAV update process...");
-        msg!("Attempting to read current state...");
-        let mut state: OVTState = state_info.get_data()?;
-        msg!("State before update: {:?}", state);
-        msg!("Current NAV: {}", state.nav_sats);
-        
-        // Validate the NAV update
-        msg!("Validating NAV update to {} sats...", btc_price_sats);
-        state.validate_nav_update(btc_price_sats)?;
-        
-        // Update state
-        state.nav_sats = btc_price_sats;
-        let clock = Clock::from_account_info(clock_info)?;
-        state.last_nav_update = clock.unix_timestamp as u64;
-        msg!("Setting new NAV to: {}", state.nav_sats);
-        msg!("State after update (before writing): {:?}", state);
+        // If this is the first update, allow any value
+        if self.nav_sats == 0 {
+            return Ok(());
+        }
 
-        state_info.set_data(&state)?;
+        // Calculate percentage change
+        let change = if new_nav_sats > self.nav_sats {
+            // For increases: Calculate percentage increase
+            (new_nav_sats - self.nav_sats) * 100 / self.nav_sats
+        } else {
+            // For decreases: Calculate percentage decrease
+            (self.nav_sats - new_nav_sats) * 100 / self.nav_sats
+        };
+
+        // For increases: limit to 400% (5x)
+        // For decreases: limit to 80% (0.2x)
+        if (new_nav_sats > self.nav_sats && change > 400) || 
+           (new_nav_sats < self.nav_sats && change > 80) {
+            return Err(OVTError::InvalidNAVUpdate.into());
+        }
+
         Ok(())
     }
 
-    fn process_buyback_burn(
-        ctx: &Context,
-        payment_txid: &str,
+    pub fn update_nav(
+        &mut self,
+        btc_price_sats: u64,
+        clock_info: &AccountInfo,
+    ) -> Result<(), ProgramError> {
+        // Get current timestamp from clock sysvar
+        let clock_data = clock_info.try_borrow_data().map_err(|_| ProgramError::AccountBorrowFailed)?;
+        let current_time = u64::from_le_bytes(clock_data[..8].try_into().map_err(|_| ProgramError::InvalidAccountData)?);
+
+        // Ensure sufficient time has passed since last update (15 seconds minimum)
+        if current_time - self.last_nav_update < 15 {
+            return Err(OVTError::OperationTimeout.into());
+        }
+
+        // Validate the NAV update
+        self.validate_nav_update(btc_price_sats)?;
+
+        self.nav_sats = btc_price_sats;
+        self.last_nav_update = current_time;
+        Ok(())
+    }
+
+    pub fn process_buyback_burn(
+        &mut self,
         payment_amount_sats: u64,
     ) -> Result<(), ProgramError> {
-        let state_info = ctx.get(0)?;
-        let authority_info = ctx.get(1)?;
-
-        // Verify admin signature
-        if !authority_info.is_signer {
-            return Err(ProgramError::MissingRequiredSignature);
+        // Verify payment amount is reasonable
+        if payment_amount_sats == 0 || payment_amount_sats > 1_000_000_000 {
+            return Err(OVTError::InvalidBitcoinTransaction.into());
         }
 
-        // For now, we'll consider any signer as admin
-        // TODO: Implement proper admin verification using multisig
-        msg!("Admin verification passed for: {:?}", authority_info.key);
+        // Calculate tokens to burn based on NAV
+        let tokens_to_burn = (payment_amount_sats * self.total_supply) / self.nav_sats;
+        if tokens_to_burn == 0 {
+            return Err(OVTError::InsufficientFunds.into());
+        }
 
-        let mut state: OVTState = state_info.get_data()?;
+        // Update total supply
+        self.total_supply = self.total_supply.checked_sub(tokens_to_burn)
+            .ok_or(OVTError::InvalidSupplyChange)?;
+
+        Ok(())
+    }
+}
+
+impl Program for OVTProgram {
+    fn process_instruction(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Result<(), ProgramError> {
+        let instruction = OVTInstruction::try_from_slice(data)
+            .map_err(|_| ProgramError::InvalidInstructionData)?;
         
-        // Validate treasury
-        state.validate_treasury()?;
-        
-        // Calculate OVT amount to burn based on current NAV
-        let ovt_to_burn = if state.nav_sats > 0 {
-            (payment_amount_sats as u128)
-                .checked_mul(state.total_supply as u128)
-                .and_then(|product| product.checked_div(state.nav_sats as u128))
-                .and_then(|result| if result <= u64::MAX as u128 { Some(result as u64) } else { None })
-                .ok_or(OVTError::InvalidSupplyChange)?
-        } else {
-            return Err(OVTError::InvalidNAVUpdate.into());
+        match instruction {
+            OVTInstruction::Initialize { treasury_pubkey_bytes } => {
+                let state_info = accounts.get(0).ok_or(ProgramError::NotEnoughAccountKeys)?;
+                let authority_info = accounts.get(1).ok_or(ProgramError::NotEnoughAccountKeys)?;
+                let system_program = accounts.get(2).ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+                if !authority_info.is_signer {
+                    return Err(ProgramError::MissingRequiredSignature);
+                }
+
+                // Create and initialize state account
+                create_program_account(
+                    program_id,
+                    state_info,
+                    authority_info,
+                    OVTState::LEN as u64,
+                    system_program,
+                )?;
+
+                // Initialize new state
+                let state = OVTState::new(treasury_pubkey_bytes);
+                let mut data = state_info.try_borrow_mut_data().map_err(|_| ProgramError::AccountBorrowFailed)?;
+                Pack::pack_into_slice(&state, &mut data);
+                Ok(())
+            }
+            OVTInstruction::UpdateNAV { btc_price_sats } => {
+                let state_info = accounts.get(0).ok_or(ProgramError::NotEnoughAccountKeys)?;
+                let authority_info = accounts.get(1).ok_or(ProgramError::NotEnoughAccountKeys)?;
+                let clock_info = accounts.get(2).ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+                if !authority_info.is_signer {
+                    return Err(ProgramError::MissingRequiredSignature);
+                }
+
+                let mut data = state_info.try_borrow_mut_data().map_err(|_| ProgramError::AccountBorrowFailed)?;
+                let mut state: OVTState = Pack::unpack_from_slice(&data)?;
+                state.update_nav(btc_price_sats, clock_info)?;
+                Pack::pack_into_slice(&state, &mut data);
+                Ok(())
+            }
+            OVTInstruction::BuybackBurn { payment_txid: _, payment_amount_sats } => {
+                let state_info = accounts.get(0).ok_or(ProgramError::NotEnoughAccountKeys)?;
+                let authority_info = accounts.get(1).ok_or(ProgramError::NotEnoughAccountKeys)?;
+
+                if !authority_info.is_signer {
+                    return Err(ProgramError::MissingRequiredSignature);
+                }
+
+                let mut data = state_info.try_borrow_mut_data().map_err(|_| ProgramError::AccountBorrowFailed)?;
+                let mut state: OVTState = Pack::unpack_from_slice(&data)?;
+                state.process_buyback_burn(payment_amount_sats)?;
+                Pack::pack_into_slice(&state, &mut data);
+                Ok(())
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arch_program::utxo::UtxoMeta;
+    use std::{rc::Rc, cell::RefCell, sync::LazyLock};
+    
+    // Static values for tests using LazyLock
+    static DUMMY_PUBKEY: LazyLock<Pubkey> = LazyLock::new(|| Pubkey::new_unique());
+    static DUMMY_UTXO_DATA: [u8; 44] = [0; 44];
+    static DUMMY_UTXO: LazyLock<UtxoMeta> = LazyLock::new(|| UtxoMeta::from_slice(&DUMMY_UTXO_DATA));
+
+    fn create_test_account_info(data: &mut [u8]) -> AccountInfo {
+        AccountInfo {
+            key: &DUMMY_PUBKEY,
+            is_signer: true,
+            is_writable: true,
+            is_executable: false,
+            utxo: &DUMMY_UTXO,
+            owner: &DUMMY_PUBKEY,
+            data: Rc::new(RefCell::new(data)),
+        }
+    }
+
+    #[test]
+    fn test_nav_validation() {
+        let mut state = OVTState {
+            nav_sats: 1_000_000,
+            treasury_pubkey_bytes: [0; 33],
+            total_supply: 1_000_000,
+            last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
         };
 
-        // Calculate new supply and validate
-        let new_supply = state.total_supply
-            .checked_sub(ovt_to_burn)
-            .ok_or(OVTError::InvalidSupplyChange)?;
-            
-        // Validate supply change
-        state.validate_supply_change(new_supply)?;
-        state.total_supply = new_supply;
+        // First update at t = 16 (valid: enough time passed)
+        let mut clock_data = 16u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(2_000_000, &clock_info).is_ok()); // 100% increase - within 400% limit
 
-        state_info.set_data(&state)?;
-        Ok(())
+        // Second update at t = 20 (invalid: too soon after first update)
+        let mut clock_data = 20u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(500_000, &clock_info).is_err()); // Should fail due to 15-second minimum delay
+
+        // Third update at t = 32 (valid: enough time passed)
+        let mut clock_data = 32u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(8_000_000, &clock_info).is_ok()); // 300% increase - within 400% limit
+
+        // Fourth update at t = 48 (valid time, invalid amount - too large increase)
+        let mut clock_data = 48u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(50_000_000, &clock_info).is_err()); // 525% increase - exceeds 400% limit
+
+        // Fifth update at t = 64 (valid time, invalid amount - too large decrease)
+        let mut clock_data = 64u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(1_000_000, &clock_info).is_err()); // 87.5% decrease - exceeds 80% limit
+
+        // Sixth update at t = 80 (valid time, valid amount - acceptable decrease)
+        let mut clock_data = 80u64.to_le_bytes();
+        let clock_info = create_test_account_info(&mut clock_data);
+        assert!(state.update_nav(2_000_000, &clock_info).is_ok()); // 75% decrease - within 80% limit
+    }
+
+    #[test]
+    fn test_supply_validation() {
+        let mut state = OVTState {
+            nav_sats: 1_000_000,
+            treasury_pubkey_bytes: [0; 33],
+            total_supply: 1_000_000,
+            last_nav_update: 0,
+            network_status: NetworkStatus::Syncing,
+            last_sync_height: 0,
+        };
+
+        // Test valid changes
+        assert!(state.process_buyback_burn(100_000).is_ok()); // 10% decrease
+        assert!(state.process_buyback_burn(50_000).is_ok()); // 5% decrease
+
+        // Test invalid changes
+        assert!(state.process_buyback_burn(2_000_000).is_err()); // Too large
+        assert!(state.process_buyback_burn(0).is_err()); // Zero amount
     }
 } 

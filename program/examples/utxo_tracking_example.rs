@@ -15,25 +15,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         password: "password".to_string(),
     };
     
-    // Create RPC client by using the config values directly
-    let rpc_client = Arc::new(BitcoinRpcClient {
-        endpoint: config.endpoint,
-        port: config.port,
-        username: config.username,
-        password: config.password,
-    });
+    // Create RPC client using the proper constructor
+    let rpc_client = Arc::new(BitcoinRpcClient::new(config));
     
     // Create UTXO tracker with 6 confirmations required
     let mut tracker = UtxoTracker::new(rpc_client.clone(), 6);
     
-    // Add a sample UTXO
-    let utxo = UtxoMeta {
-        txid: "0101010101010101010101010101010101010101010101010101010101010101".to_string(),
-        vout: 0,
-        amount_sats: 100000,
-        script_pubkey: "76a914000000000000000000000000000000000000000088ac".to_string(),
-        confirmations: 0,
-    };
+    // Create test UTXO with proper fields
+    let utxo = UtxoMeta::new(
+        "a000000000000000000000000000000000000000000000000000000000000000".to_string(),
+        0,
+        100_000,
+    );
     
     // Add UTXO with Pending status
     tracker.add_utxo(utxo.clone(), UtxoStatus::Pending).await;
@@ -48,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let total_value: u64 = all_utxos.iter().map(|(meta, _)| meta.amount_sats).sum();
     println!("Total value of UTXOs: {} sats", total_value);
     
-    // Mark UTXO as spent
+    // Mark UTXO as spent using the txid string
     tracker.mark_utxo_spent(&utxo.txid).await;
     println!("Marked UTXO as spent");
     
