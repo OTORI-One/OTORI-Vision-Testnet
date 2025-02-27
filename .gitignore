@@ -113,10 +113,13 @@ Icon
 .arch-validator/
 .arch_data/
 .arch-data*/
+arch-sdk-backup/
+arch-sdk-testnet/
+build_testnet/
+tmp/
 
 # Bitcoin Core data
 .bitcoin/
-bitcoin/
 *.dat
 
 # Logs and temporary files
@@ -124,3 +127,15 @@ bitcoin/
 app.log
 new_blocks.txt
 *.tmp
+new_txns.txt
+replaced_txns.txt
+
+# Deployment scripts and files
+extract_program_id.js
+update_frontend_config.sh
+user_deploy.sh
+bypass_network_validation.sh
+.caller.json
+
+# Backup files
+*.backup

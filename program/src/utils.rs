@@ -2,9 +2,9 @@ use arch_program::{
     program_error::ProgramError,
     account::AccountInfo,
     pubkey::Pubkey,
+    msg,
 };
 use borsh::BorshSerialize;
-use crate::AccountInfoExt;
 
 pub fn create_program_account(
     _program_id: &Pubkey,
@@ -24,5 +24,19 @@ pub fn initialize_account<T: BorshSerialize>(
     data: &T,
 ) -> Result<(), ProgramError> {
     // Initialize the account with the provided data
-    account.set_data(data)
+    let data_bytes = borsh::to_vec(data).map_err(|_| ProgramError::InvalidArgument)?;
+    
+    // Get account data
+    let mut account_data = account.try_borrow_mut_data()?;
+    
+    // Check if there's enough space
+    if account_data.len() < data_bytes.len() {
+        msg!("Account data buffer too small");
+        return Err(ProgramError::AccountDataTooSmall);
+    }
+    
+    // Copy data into the account
+    account_data[..data_bytes.len()].copy_from_slice(&data_bytes);
+    
+    Ok(())
 } 

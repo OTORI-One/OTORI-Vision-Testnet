@@ -7,7 +7,7 @@ use arch_program::{
 };
 
 use borsh::{BorshDeserialize, BorshSerialize};
-use std::{rc::Rc, cell::RefCell, sync::LazyLock};
+use std::{rc::Rc, cell::RefCell};
 
 // Define the Program trait
 pub trait Program {
@@ -226,22 +226,28 @@ impl Program for OVTProgram {
 mod tests {
     use super::*;
     use arch_program::utxo::UtxoMeta;
-    use std::{rc::Rc, cell::RefCell, sync::LazyLock};
+    use std::{rc::Rc, cell::RefCell};
     
-    // Static values for tests using LazyLock
-    static DUMMY_PUBKEY: LazyLock<Pubkey> = LazyLock::new(|| Pubkey::new_unique());
-    static DUMMY_UTXO_DATA: [u8; 44] = [0; 44];
-    static DUMMY_UTXO: LazyLock<UtxoMeta> = LazyLock::new(|| UtxoMeta::from_slice(&DUMMY_UTXO_DATA));
-
+    // Static values for tests using static variables instead of LazyLock
+    static mut TEST_NAV_SATS: u64 = 1_000_000;
+    static mut TEST_SUPPLY: u64 = 1_000_000_000;
+    
+    // Helper function to create test account info
     fn create_test_account_info(data: &mut [u8]) -> AccountInfo {
+        let key = Pubkey::new_unique();
+        let owner = Pubkey::new_unique();
+        let lamports = Rc::new(RefCell::new(100_000));
+        let data = Rc::new(RefCell::new(data.to_vec()));
+        
         AccountInfo {
-            key: &DUMMY_PUBKEY,
-            is_signer: true,
+            key: &key,
+            is_signer: false,
             is_writable: true,
-            is_executable: false,
-            utxo: &DUMMY_UTXO,
-            owner: &DUMMY_PUBKEY,
-            data: Rc::new(RefCell::new(data)),
+            lamports,
+            data,
+            owner: &owner,
+            executable: false,
+            rent_epoch: 0,
         }
     }
 

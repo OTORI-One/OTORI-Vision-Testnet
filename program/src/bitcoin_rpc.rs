@@ -12,7 +12,7 @@ use crate::bitcoin::cache::{UtxoCache, UtxoCacheConfig};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[cfg(feature = "client")]
+#[cfg(all(feature = "client", not(target_arch = "wasm32")))]
 use {
     reqwest::{Client, StatusCode},
     bitcoincore_rpc::RpcApi,
@@ -20,7 +20,7 @@ use {
 
 #[derive(Error, Debug)]
 pub enum BitcoinRpcError {
-    #[cfg(feature = "client")]
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     #[error("HTTP client error: {0}")]
     HttpClient(#[from] reqwest::Error),
     #[error("Bitcoin RPC error: {0}")]
@@ -55,6 +55,28 @@ pub struct BitcoinRpcConfig {
 impl Default for BitcoinRpcConfig {
     fn default() -> Self {
         Self {
+            bitcoin_endpoint: "http://127.0.0.1:18332".to_string(),
+            electrs_endpoint: "http://127.0.0.1:3002".to_string(),
+            auth: Some(("bitcoin".to_string(), "bitcoinpass".to_string())),
+            network: "testnet4".to_string(),
+            min_confirmations: 1,
+        }
+    }
+}
+
+impl BitcoinRpcConfig {
+    pub fn testnet4() -> Self {
+        Self {
+            bitcoin_endpoint: "http://127.0.0.1:18332".to_string(),
+            electrs_endpoint: "http://127.0.0.1:3002".to_string(),
+            auth: Some(("bitcoin".to_string(), "bitcoinpass".to_string())),
+            network: "testnet4".to_string(),
+            min_confirmations: 1,
+        }
+    }
+
+    pub fn regtest() -> Self {
+        Self {
             bitcoin_endpoint: "http://127.0.0.1:18443".to_string(),
             electrs_endpoint: "http://127.0.0.1:3002".to_string(),
             auth: Some(("bitcoin".to_string(), "bitcoinpass".to_string())),
@@ -80,30 +102,37 @@ struct ElectrsOutput {
 #[derive(Debug, Clone)]
 pub struct BitcoinRpcClient {
     config: BitcoinRpcConfig,
-    #[cfg(feature = "client")]
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     http_client: Client,
     cache: UtxoCache,
 }
 
 impl BitcoinRpcClient {
     pub fn new(config: BitcoinRpcConfig) -> Self {
+        #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
+        let http_client = Client::new();
+        
         Self {
-            #[cfg(feature = "client")]
-            http_client: Client::new(),
-            cache: UtxoCache::new(UtxoCacheConfig::default()),
             config,
+            #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
+            http_client,
+            cache: UtxoCache::new(UtxoCacheConfig::default()),
         }
     }
 
     pub fn with_cache_config(config: BitcoinRpcConfig, cache_config: UtxoCacheConfig) -> Self {
+        #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
+        let http_client = Client::new();
+        
         Self {
-            #[cfg(feature = "client")]
-            http_client: Client::new(),
-            cache: UtxoCache::new(cache_config),
             config,
+            #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
+            http_client,
+            cache: UtxoCache::new(cache_config),
         }
     }
 
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn get_transaction(&self, txid: &str) -> Result<Transaction, BitcoinRpcError> {
         let url = format!("{}/tx/{}", self.config.electrs_endpoint, txid);
         
@@ -135,6 +164,7 @@ impl BitcoinRpcClient {
         })
     }
 
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn get_utxo_status(&self, utxo: &UtxoMeta) -> Result<UtxoStatus, BitcoinRpcError> {
         // Try to get from cache first
         if let Ok(status) = self.cache.get_utxo_status(self, utxo).await {
@@ -177,6 +207,7 @@ impl BitcoinRpcClient {
         Ok(utxo_status)
     }
 
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn get_confirmations(&self, txid: &str) -> Result<u32, BitcoinRpcError> {
         let url = format!("{}/tx/{}/status", self.config.electrs_endpoint, txid);
         
@@ -219,6 +250,7 @@ impl BitcoinRpcClient {
         }
     }
 
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn validate_utxo(&self, utxo: &UtxoMeta) -> Result<(), BitcoinRpcError> {
         let status = self.get_utxo_status(utxo).await?;
         
@@ -236,6 +268,7 @@ impl BitcoinRpcClient {
         }
     }
 
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn broadcast_transaction(&self, tx: &Transaction) -> Result<String, BitcoinRpcError> {
         let tx_hex = hex::encode(tx.serialize().as_ref());
         let url = format!("{}/tx", self.config.electrs_endpoint);
@@ -260,16 +293,19 @@ impl BitcoinRpcClient {
     }
 
     /// Get cache statistics
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn get_cache_stats(&self) -> CacheStats {
         self.cache.get_stats().await
     }
 
     /// Manually trigger cache cleanup
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn cleanup_cache(&self) {
         self.cache.cleanup().await;
     }
 
     /// Handle reorg by invalidating affected cache entries
+    #[cfg(all(feature = "client", not(target_arch = "wasm32")))]
     pub async fn handle_reorg(&self, height: u32) {
         self.cache.handle_reorg(height).await;
     }

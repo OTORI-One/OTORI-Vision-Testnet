@@ -179,10 +179,11 @@ pub struct CacheStats {
     pub misses: usize,
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-
+    use std::time::Duration;
+    
     #[tokio::test]
     async fn test_cache_basic_operations() {
         let config = UtxoCacheConfig {
@@ -225,7 +226,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_cache_cleanup() {
+    async fn test_cache_eviction() {
         let config = UtxoCacheConfig {
             max_size: 10,
             refresh_interval: Duration::from_millis(50),

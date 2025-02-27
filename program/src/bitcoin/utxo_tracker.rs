@@ -166,14 +166,14 @@ impl UtxoTracking for UtxoTracker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use crate::bitcoin::rpc::{BitcoinRpcClient, BitcoinRpcConfig};
+    use super::*;
     
-    // These tests require a running Bitcoin node or mock
-    // They are integration tests and should be run with the appropriate feature flags
     #[tokio::test]
-    async fn test_utxo_lifecycle() {
-        // This test would be implemented in the integration test suite
+    async fn test_utxo_tracker() {
+        // ... existing test code ...
     }
+    
+    // ... other test functions ...
 } 

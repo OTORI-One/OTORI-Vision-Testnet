@@ -2,9 +2,11 @@ use arch_program::program_error::ProgramError;
 use bitcoin::{Transaction, Amount, BlockHash, Block};
 use crate::bitcoin::utxo::{UtxoMeta, UtxoStatus};
 use crate::bitcoin::cache::{UtxoCache, UtxoCacheConfig, CacheStats};
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::{Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::time::sleep;
 use std::sync::Arc;
 
@@ -18,6 +20,7 @@ pub struct BitcoinRpcClient {
     port: u16,
     username: String,
     password: String,
+    #[cfg(not(target_arch = "wasm32"))]
     http_client: Client,
     cache: UtxoCache,
 }
@@ -74,6 +77,7 @@ impl BitcoinRpcClient {
             port: config.port,
             username: config.username,
             password: config.password,
+            #[cfg(not(target_arch = "wasm32"))]
             http_client,
             cache: Default::default(),
         }

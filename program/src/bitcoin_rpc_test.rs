@@ -1,3 +1,5 @@
+#![cfg(all(test, not(target_arch = "wasm32")))]
+
 use bitcoin::{
     Transaction, 
     TxIn, 

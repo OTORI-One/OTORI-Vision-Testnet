@@ -17,6 +17,7 @@ use crate::{
     instructions::OVTInstruction,
     state::OVTState,
     utils::{create_program_account, initialize_account},
+    bitcoin::rpc::BitcoinRpcConfig,
 };
 
 // Program ID constant
@@ -25,6 +26,19 @@ pub const OVT_PROGRAM_ID: &str = "ovt1111111111111111111111111111111111111111";
 // Define account seeds
 pub const OVT_STATE_SEED: &[u8] = b"ovt_state";
 pub const TREASURY_SEED: &[u8] = b"treasury";
+
+// Network configuration
+#[cfg(feature = "testnet")]
+pub fn get_network_config() -> BitcoinRpcConfig {
+    msg!("Using testnet4 configuration");
+    BitcoinRpcConfig::testnet4()
+}
+
+#[cfg(not(feature = "testnet"))]
+pub fn get_network_config() -> BitcoinRpcConfig {
+    msg!("Using regtest configuration");
+    BitcoinRpcConfig::regtest()
+}
 
 // Program entrypoint
 entrypoint!(process_instruction);
@@ -44,6 +58,7 @@ pub fn process_instruction(
     let context = Context {
         program_id: *program_id,
         accounts,
+        network_config: get_network_config(),
     };
     
     // Process instruction
@@ -64,6 +79,7 @@ pub fn process_instruction(
 pub struct Context<'a> {
     pub program_id: Pubkey,
     pub accounts: &'a [AccountInfo<'a>],
+    pub network_config: BitcoinRpcConfig,
 }
 
 impl<'a> Context<'a> {
@@ -71,6 +87,28 @@ impl<'a> Context<'a> {
         self.accounts
             .get(index)
             .ok_or(ProgramError::NotEnoughAccountKeys)
+    }
+
+    pub fn validate_network(&self) -> ProgramResult {
+        #[cfg(feature = "testnet")]
+        {
+            msg!("Validating network: expecting testnet4");
+            if self.network_config.network != "testnet4" {
+                msg!("Network validation failed: expected testnet4, got {}", self.network_config.network);
+                return Err(ProgramError::Custom(1)); // Invalid network
+            }
+        }
+
+        #[cfg(not(feature = "testnet"))]
+        {
+            msg!("Validating network: expecting regtest");
+            if self.network_config.network != "regtest" {
+                msg!("Network validation failed: expected regtest, got {}", self.network_config.network);
+                return Err(ProgramError::Custom(1)); // Invalid network
+            }
+        }
+
+        Ok(())
     }
 }
 

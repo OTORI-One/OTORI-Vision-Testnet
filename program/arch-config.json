@@ -22,16 +22,22 @@
   },
   "network": {
     "testnet": {
-      "endpoint": "https://api.testnet.archnetwork.io",
+      "endpoint": "http://127.0.0.1:9002",
       "bitcoin_network": "testnet4",
-      "bitcoin_rpc": "http://localhost:18332",
-      "electrs_endpoint": "http://localhost:50001"
+      "bitcoin_rpc": "http://127.0.0.1:48332",
+      "electrs_endpoint": "http://127.0.0.1:3004",
+      "min_confirmations": 1,
+      "wallet_provider": {
+        "type": "lasereyes",
+        "network": "testnet4"
+      }
     }
   },
   "build": {
     "target": "wasm32-unknown-unknown",
     "features": ["testnet"],
-    "debug": true
+    "debug": true,
+    "optimize": true
   },
   "test": {
     "bitcoin_regtest": true,
@@ -39,13 +45,18 @@
     "coverage": true
   },
   "security": {
-    "multisig_threshold": 3,
-    "multisig_total": 5,
-    "admin_pubkeys": []
+    "multisig_threshold": 2,
+    "multisig_total": 2,
+    "admin_pubkeys": [
+      "tb1qatvvk3c3saefxerldrazzgkpxjpresywdy60p7",
+      "tb1p7w7x9c2wev7gqzj5xcxpx3km33x36g20dtj6tywu9unnu2zxa7hqdd6hua"
+    ]
   },
   "monitoring": {
     "log_level": "info",
     "metrics_enabled": true,
-    "error_reporting": true
+    "error_reporting": true,
+    "reorg_detection": true,
+    "utxo_monitoring": true
   }
 } 

@@ -1,10 +1,11 @@
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use mockito::{mock, server_url};
     use bitcoin::consensus::encode;
     use bitcoin::hashes::hex::FromHex;
     use std::str::FromStr;
+    use std::time::Duration;
 
     fn setup_test_client() -> BitcoinRpcClient {
         let config = BitcoinRpcConfig {

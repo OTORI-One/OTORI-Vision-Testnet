@@ -1,5 +1,5 @@
 [package]
-name = "program"
+name = "otori-program"
 version = "0.1.0"
 edition = "2021"
 description = "OTORI Vision Token (OVT) Program using Runes Protocol"
@@ -7,40 +7,19 @@ description = "OTORI Vision Token (OVT) Program using Runes Protocol"
 [workspace]
 
 [lib]
-name = "program"
+name = "otori_program"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 
+# Minimal dependencies for testnet deployment
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["alloc"] }
-borsh = { version = "1.5", features = ["derive"] }
-thiserror = "2.0"
-bitcoin = { version = "0.32.5", features = ["std", "serde"] }
-hex = "0.4"
 arch_program = { path = "../arch-sdk/program", version = "0.3.2" }
-base64 = "0.22.0"
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
-tokio = { version = "1.0", features = ["full"] }
-bitcoincore-rpc = { version = "0.19.0", optional = true }
-libsecp256k1 = { version = "0.7.0", features = ["static-context"] }
-async-trait = "0.1.77"
-lazy_static = "1.4.0"
-lru = "0.12.1"
-futures = "0.3"
+getrandom = { version = "0.2", features = ["js", "custom"] }
 
 [features]
-default = ["program"]
-# Main program feature for on-chain code
-program = []
-# Client feature for off-chain interaction
-client = ["dep:bitcoincore-rpc"]
-# Test utilities including mocks
-test-utils = ["client"]
-# Production syscalls - mutually exclusive with test-utils
-production-syscalls = []
+default = ["testnet"]
+testnet = []
 
-[dev-dependencies]
-tokio = { version = "1.0", features = ["full", "test-util", "macros"] }
-anyhow = "1.0"
-mockito = "1.2.0" 
+# Configure the build for WebAssembly target
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js", "wasm-bindgen"] }
