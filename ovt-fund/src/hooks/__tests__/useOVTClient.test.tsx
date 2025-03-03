@@ -39,7 +39,12 @@ describe('useOVTClient', () => {
       totalValue: '$0.00',
       totalValueSats: 0,
       changePercentage: '0.00%',
-      portfolioItems: []
+      portfolioItems: [],
+      dataSource: {
+        isMock: true,
+        label: 'Simulated Data',
+        color: 'amber'
+      }
     });
   });
 

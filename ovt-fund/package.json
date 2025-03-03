@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test": "jest",
     "populate-positions": "ts-node scripts/populate-initial-positions.ts",
-    "mint-ovt": "ts-node scripts/mint-initial-ovt.ts"
+    "mint-ovt": "ts-node scripts/mint-initial-ovt.ts",
+    "seed-contract": "ts-node scripts/seed-contract-data.ts"
   },
   "keywords": [],
   "author": "",
@@ -22,6 +23,7 @@
     "@omnisat/lasereyes-core": "^0.0.62",
     "@omnisat/lasereyes-react": "^0.0.57",
     "autoprefixer": "^10.4.17",
+    "dotenv": "^16.4.5",
     "lasereyes-mono": "github:omnisat/lasereyes-mono#main",
     "next": "13.5.6",
     "postcss": "^8.4.35",

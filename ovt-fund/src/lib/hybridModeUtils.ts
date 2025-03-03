@@ -12,6 +12,7 @@ import { Portfolio } from '../hooks/useOVTClient';
 // Type definitions for configuration
 export type DataSource = 'mock' | 'real';
 export type AppMode = 'mock' | 'real' | 'hybrid';
+export type DataType = 'portfolio' | 'transaction' | 'tokenSupply' | 'trading';
 
 // Interface for hybrid mode configuration
 export interface HybridModeConfig {
@@ -19,6 +20,7 @@ export interface HybridModeConfig {
   portfolioDataSource: DataSource;
   transactionDataSource: DataSource;
   tokenSupplyDataSource: DataSource;
+  tradingDataSource: DataSource;
 }
 
 /**
@@ -44,7 +46,8 @@ export function getHybridModeConfig(): HybridModeConfig {
       mode,
       portfolioDataSource: dataSource,
       transactionDataSource: dataSource,
-      tokenSupplyDataSource: dataSource
+      tokenSupplyDataSource: dataSource,
+      tradingDataSource: dataSource
     };
   }
   
@@ -53,7 +56,8 @@ export function getHybridModeConfig(): HybridModeConfig {
     mode: 'hybrid',
     portfolioDataSource: (process.env.NEXT_PUBLIC_PORTFOLIO_DATA_SOURCE || 'real') as DataSource,
     transactionDataSource: (process.env.NEXT_PUBLIC_TRANSACTION_DATA_SOURCE || 'real') as DataSource,
-    tokenSupplyDataSource: (process.env.NEXT_PUBLIC_TOKEN_SUPPLY_DATA_SOURCE || 'real') as DataSource
+    tokenSupplyDataSource: (process.env.NEXT_PUBLIC_TOKEN_SUPPLY_DATA_SOURCE || 'real') as DataSource,
+    tradingDataSource: (process.env.NEXT_PUBLIC_TRADING_DATA_SOURCE || 'mock') as DataSource
   };
 }
 
@@ -99,7 +103,7 @@ export function getTokenSupplyData(realSupply: number): number {
  * @param dataType The type of data to check
  * @returns True if mock data should be used, false otherwise
  */
-export function shouldUseMockData(dataType: 'portfolio' | 'transaction' | 'tokenSupply'): boolean {
+export function shouldUseMockData(dataType: DataType): boolean {
   const config = getHybridModeConfig();
   
   // In hybrid mode, check the specific data type
@@ -110,6 +114,8 @@ export function shouldUseMockData(dataType: 'portfolio' | 'transaction' | 'token
       return config.transactionDataSource === 'mock';
     case 'tokenSupply':
       return config.tokenSupplyDataSource === 'mock';
+    case 'trading':
+      return config.tradingDataSource === 'mock';
     default:
       return false;
   }
@@ -121,7 +127,7 @@ export function shouldUseMockData(dataType: 'portfolio' | 'transaction' | 'token
  * @param dataType The type of data being displayed
  * @returns An object with information about the data source for UI display
  */
-export function getDataSourceIndicator(dataType: 'portfolio' | 'transaction' | 'tokenSupply'): {
+export function getDataSourceIndicator(dataType: DataType): {
   isMock: boolean;
   label: string;
   color: string;

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { ArchClient } from '../lib/archClient';
 import { useBitcoinPrice } from '../hooks/useBitcoinPrice';
 import { useLaserEyes } from '@omnisat/lasereyes';
@@ -79,8 +79,50 @@ const archClient = new ArchClient({
   endpoint: process.env.NEXT_PUBLIC_ARCH_ENDPOINT || 'http://localhost:8000',
 });
 
+// Create a centralized currency formatter that will be used by all components
+export const createCurrencyFormatter = (btcPrice: number | null) => {
+  // Return a function that formats values according to the specified currency
+  return (sats: number, displayMode: 'btc' | 'usd' = 'btc'): string => {
+    console.log(`[GLOBAL] Formatting ${sats} sats in ${displayMode} mode with BTC price: ${btcPrice}`);
+    
+    if (displayMode === 'usd' && btcPrice) {
+      const usdValue = (sats / SATS_PER_BTC) * btcPrice;
+      // USD formatting
+      if (usdValue >= 1000000) {
+        return `$${(usdValue / 1000000).toFixed(2)}M`; // Above 1M: 2 decimals with M
+      }
+      if (usdValue >= 1000) {
+        return `$${(usdValue / 1000).toFixed(1)}k`; // Below 1M: 1 decimal with k
+      }
+      if (usdValue < 100) {
+        return `$${usdValue.toFixed(2)}`; // Below 100: 2 decimals
+      }
+      return `$${Math.round(usdValue)}`; // Below 1000: no decimals
+    }
+
+    // BTC display mode
+    if (sats >= 10000000) { // 0.1 BTC or more
+      return `₿${(sats / SATS_PER_BTC).toFixed(2)}`; // Show as BTC with 2 decimals
+    }
+    
+    // Show as sats with k/M notation
+    if (sats >= 1000000) {
+      return `${(sats / 1000000).toFixed(2)}M sats`; // Millions
+    }
+    if (sats >= 1000) {
+      return `${(sats / 1000).toFixed(1)}k sats`; // Thousands
+    }
+    
+    // Small values
+    return `${Math.floor(sats)} sats`;
+  };
+};
+
 // Helper function to format values consistently
 const formatValue = (sats: number, displayMode: 'btc' | 'usd' = 'btc', btcPrice?: number | null): string => {
+  // Add debugging
+  console.log(`formatValue called with sats: ${sats}, mode: ${displayMode}, btcPrice: ${btcPrice}`);
+  
   if (displayMode === 'usd' && btcPrice) {
     const usdValue = (sats / SATS_PER_BTC) * btcPrice;
     // USD formatting
@@ -108,7 +150,9 @@ const formatValue = (sats: number, displayMode: 'btc' | 'usd' = 'btc', btcPrice?
   if (sats >= 1000) {
     return `${(sats / 1000).toFixed(1)}k sats`; // Thousands
   }
-  return `${sats} sats`;
+  
+  // Small values
+  return `${Math.floor(sats)} sats`;
 };
 
 // Import mock data
@@ -169,7 +213,9 @@ if (shouldUseMockData('portfolio')) {
 export function useOVTClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [baseCurrency, setBaseCurrency] = useState<'btc' | 'usd'>('usd');
+  // Initialize from localStorage if available, but use useState with undefined initially
+  // to prevent hydration mismatch
+  const [baseCurrency, setBaseCurrency] = useState<'btc' | 'usd' | undefined>(undefined);
   const { price: btcPrice } = useBitcoinPrice();
   const { address } = useLaserEyes();
   const hybridConfig = getHybridModeConfig();
@@ -181,6 +227,24 @@ export function useOVTClient() {
     portfolioItems: [],
     dataSource: getDataSourceIndicator('portfolio')
   }));
+
+  // Initialize currency from localStorage after mount to prevent hydration mismatch
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('ovt-currency-preference');
+      console.log('Initializing currency from localStorage:', saved);
+      setBaseCurrency(saved === 'btc' ? 'btc' : 'usd');
+    }
+  }, []);
+
+  // Simple currency change handler
+  const handleCurrencyChange = useCallback((currency: 'btc' | 'usd') => {
+    console.log('Currency changing from', baseCurrency, 'to', currency);
+    setBaseCurrency(currency);
+    
+    // Force a re-fetch of NAV data with the new currency
+    fetchNAV(currency);
+  }, [baseCurrency]);
 
   // Get transaction history
   const getTransactionHistory = useCallback(async () => {
@@ -280,117 +344,63 @@ export function useOVTClient() {
   }, [archClient, address, mockMode]);
 
   // Fetch NAV data periodically
-  useEffect(() => {
-    const fetchNAV = async (currency: 'btc' | 'usd' = 'usd') => {
-      try {
-        setIsLoading(true);
+  const fetchNAV = useCallback(async (currency: 'btc' | 'usd' = 'usd') => {
+    // Only proceed if baseCurrency is defined (client-side)
+    if (!baseCurrency && typeof window !== 'undefined') {
+      console.log('Currency not yet initialized, using default:', currency);
+    }
+    
+    // Use the passed currency or the current baseCurrency (if defined)
+    const currencyToUse = currency || baseCurrency || 'usd';
+    console.log('Fetching NAV with currency:', currencyToUse);
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Check if we should use mock data for portfolio
+      if (shouldUseMockData('portfolio')) {
+        // Use mock data calculations
+        console.log('Using mock portfolio data');
         
-        // Check if we should use mock data for portfolio
-        if (shouldUseMockData('portfolio')) {
-          console.log('Fetching NAV with mock portfolio data');
-          
-          // Calculate totals in sats (including simulated growth)
-          const totalValueSats = portfolioPositions.reduce((sum, item) => {
-            // Simulate growth by adding a percentage to the initial value
-            const growthMultiplier = 1.1; // 10% growth
-            const currentValue = Math.floor(item.value * growthMultiplier);
-            console.log(`Adding ${item.name} value: ${currentValue} sats`);
-            return sum + currentValue;
-          }, 0);
-          
-          const totalInitialSats = portfolioPositions.reduce((sum, item) => {
-            console.log(`Adding ${item.name} initial: ${item.value} sats`);
-            return sum + item.value;
-          }, 0);
-
-          console.log('Total value in sats:', totalValueSats);
-          
-          // Calculate growth percentage (handle empty portfolio case)
-          const changePercentage = totalInitialSats === 0 ? 0 : 
-            ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
-
-          // Update current values and changes for each position
-          const updatedPositions = portfolioPositions.map(position => {
-            const growthMultiplier = 1.1; // 10% growth
-            const currentValue = Math.floor(position.value * growthMultiplier);
-            const change = currentValue - position.value;
-            return {
-              ...position,
-              current: currentValue,
-              change
-            };
-          });
-
-          // Format total value according to currency mode
-          const formattedTotal = formatValue(totalValueSats, currency, btcPrice);
-          console.log('Formatted total:', formattedTotal);
-          
-          const newNavData = {
-            totalValue: formattedTotal,
-            totalValueSats,
-            changePercentage: `${changePercentage.toFixed(2)}%`,
-            portfolioItems: updatedPositions,
-            dataSource: getDataSourceIndicator('portfolio')
+        // Calculate total value in sats and growth with random fluctuations
+        // Add random fluctuation between -2% and +2% to simulate market movement
+        const fluctuation = 1 + (Math.random() * 0.04 - 0.02); // Random value between 0.98 and 1.02
+        
+        // Update current values with fluctuation for all positions
+        const updatedPositions = portfolioPositions.map(position => {
+          const currentValue = Math.floor(position.value * 1.1 * fluctuation); // Base 10% growth + fluctuation
+          const change = ((currentValue - position.value) / position.value) * 100;
+          return {
+            ...position,
+            current: currentValue,
+            change: Number(change.toFixed(1))
           };
-          
-          console.log('Setting new NAV data:', newNavData);
-          setNavData(newNavData);
-          setIsLoading(false);
-          return;
-        }
-
-        // In production or hybrid mode with real portfolio data, fetch from Arch Network
-        console.log('Fetching NAV from Arch Network');
+        });
+        
+        // Calculate totals with updated positions
+        const totalValueSats = updatedPositions.reduce((sum, item) => sum + item.current, 0);
+        const totalInitialSats = updatedPositions.reduce((sum, item) => sum + item.value, 0);
+        const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
+        
+        console.log('Mock NAV calculated - total:', totalValueSats, 'sats, currency:', currencyToUse);
+        
+        setNavData({
+          totalValue: formatValue(totalValueSats, currencyToUse, btcPrice),
+          totalValueSats,
+          changePercentage: `${changePercentage.toFixed(2)}%`,
+          portfolioItems: updatedPositions,
+          dataSource: getDataSourceIndicator('portfolio')
+        });
+      } else {
+        // Fetch real data from Arch Network
         try {
-          const nav = await archClient.getCurrentNAV();
+          console.log('Fetching portfolio data from Arch Network');
+          // Real implementation would call the Arch Network API
+          // archClient.getCurrentNAV()
           
-          // Ensure all required fields are present in the portfolio items
-          const portfolioItems: Portfolio[] = nav.portfolioItems.map(item => ({
-            name: item.name,
-            value: item.value,
-            current: item.current,
-            change: item.change,
-            description: item.description,
-            transactionId: item.transactionId,
-            tokenAmount: item.tokenAmount,
-            pricePerToken: item.pricePerToken,
-            address: item.address
-          }));
-
-          // In hybrid mode, we might need to merge with mock data
-          if (mockMode === 'hybrid' && shouldUseMockData('portfolio')) {
-            console.log('Merging with mock portfolio data in hybrid mode');
-            
-            // Convert mock data to Portfolio format
-            const mockPortfolioItems = mockPortfolioData.map((item: any) => ({
-              name: item.name,
-              value: item.value,
-              current: item.current || item.value,
-              change: item.change,
-              description: item.description || getProjectDescription(item.name),
-              transactionId: item.transactionId || undefined,
-              tokenAmount: item.tokenAmount || 0,
-              pricePerToken: item.pricePerToken || 0,
-              address: item.address || ''
-            }));
-            
-            const mergedPortfolioItems = mergePortfolioData(portfolioItems.concat(mockPortfolioItems));
-          } else {
-            const mergedPortfolioItems = mergePortfolioData(portfolioItems);
-          }
-
-          const totalValueSats = mergedPortfolioItems.reduce((sum, item) => sum + item.current, 0);
-          const totalInitialSats = mergedPortfolioItems.reduce((sum, item) => sum + item.value, 0);
-          const changePercentage = totalInitialSats === 0 ? 0 :
-            ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
-          
-          setNavData({
-            totalValue: formatValue(totalValueSats, currency, btcPrice),
-            totalValueSats,
-            changePercentage: `+${changePercentage.toFixed(0)}%`,
-            portfolioItems: mergedPortfolioItems,
-            dataSource: getDataSourceIndicator('portfolio')
-          });
+          // For now, we'll throw an error to trigger the fallback
+          throw new Error('Arch Network API not implemented');
         } catch (error) {
           console.error('Error fetching from Arch Network:', error);
           
@@ -399,28 +409,31 @@ export function useOVTClient() {
           if (portfolioPositions.length > 0) {
             console.log('Falling back to mock data due to network error');
             
-            const totalValueSats = portfolioPositions.reduce((sum, item) => {
-              const growthMultiplier = 1.1; // 10% growth
+            // Add random fluctuation between -2% and +2% to simulate market movement
+            const fluctuation = 1 + (Math.random() * 0.04 - 0.02); // Random value between 0.98 and 1.02
+            
+            const totalValueSats = portfolioPositions.reduce((sum: number, item: Portfolio) => {
+              const growthMultiplier = 1.1 * fluctuation; // 10% growth + fluctuation
               const currentValue = Math.floor(item.value * growthMultiplier);
               return sum + currentValue;
             }, 0);
             
-            const totalInitialSats = portfolioPositions.reduce((sum, item) => sum + item.value, 0);
+            const totalInitialSats = portfolioPositions.reduce((sum: number, item: Portfolio) => sum + item.value, 0);
             const changePercentage = ((totalValueSats - totalInitialSats) / totalInitialSats) * 100;
 
             const updatedPositions = portfolioPositions.map(position => {
-              const growthMultiplier = 1.1; // 10% growth
+              const growthMultiplier = 1.1 * fluctuation; // 10% growth + fluctuation
               const currentValue = Math.floor(position.value * growthMultiplier);
-              const change = currentValue - position.value;
+              const change = ((currentValue - position.value) / position.value) * 100;
               return {
                 ...position,
                 current: currentValue,
-                change
+                change: Number(change.toFixed(1))
               };
             });
 
             setNavData({
-              totalValue: formatValue(totalValueSats, currency, btcPrice),
+              totalValue: formatValue(totalValueSats, currencyToUse, btcPrice),
               totalValueSats,
               changePercentage: `${changePercentage.toFixed(2)}%`,
               portfolioItems: updatedPositions,
@@ -434,20 +447,33 @@ export function useOVTClient() {
             setError('Failed to fetch portfolio data and no fallback data available');
           }
         }
-      } catch (err) {
-        console.error('Failed to fetch NAV:', err);
-        setError('Failed to fetch portfolio data');
-      } finally {
-        setIsLoading(false);
       }
-    };
-
+    } catch (err) {
+      console.error('Failed to fetch NAV:', err);
+      setError('Failed to fetch portfolio data');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [baseCurrency, btcPrice]);
+  
+  // Fetch NAV data periodically
+  useEffect(() => {
+    console.log('useEffect for NAV data running, currency:', baseCurrency);
+    
     // Initial fetch with current currency mode
     fetchNAV(baseCurrency);
-    const interval = setInterval(() => fetchNAV(baseCurrency), 30000);
-
-    return () => clearInterval(interval);
-  }, [btcPrice, baseCurrency, portfolioPositions.length]); // Add portfolioPositions.length as a dependency
+    
+    // Set up interval for regular updates
+    const interval = setInterval(() => {
+      console.log('Interval update with currency:', baseCurrency);
+      fetchNAV(baseCurrency);
+    }, 60000); // Update every minute to show fluctuations
+    
+    return () => {
+      console.log('Cleaning up NAV data interval');
+      clearInterval(interval);
+    };
+  }, [baseCurrency, fetchNAV]); // Depend on baseCurrency and fetchNAV
 
   // Add position entry
   const addPosition = useCallback(async (position: Omit<Portfolio, 'current' | 'change'>) => {
@@ -476,11 +502,9 @@ export function useOVTClient() {
     isLoading,
     error,
     navData,
-    btcPrice,
-    baseCurrency,
-    setBaseCurrency,
-    formatValue: (sats: number, displayMode: 'btc' | 'usd' = 'btc') => 
-      formatValue(sats, displayMode, btcPrice),
+    baseCurrency: baseCurrency || 'usd', // Provide a default for server-side rendering
+    setBaseCurrency: handleCurrencyChange,
+    formatValue: useCallback((sats: number) => formatValue(sats, baseCurrency || 'usd', btcPrice), [baseCurrency, btcPrice]),
     addPosition,
     getPositions: () => portfolioPositions,
     getTransactionHistory,

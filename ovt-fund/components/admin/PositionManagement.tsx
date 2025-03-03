@@ -249,15 +249,15 @@ export default function PositionManagement({ onActionRequiringMultiSig }: Positi
                     <h4 className="text-lg font-medium text-gray-900">{position.name}</h4>
                     <p className="mt-1 text-sm text-gray-500">{position.description}</p>
                     <p className="mt-1 text-sm text-gray-500">
-                      {new Intl.NumberFormat().format(position.tokenAmount)} tokens @ {formatValue(position.pricePerToken, 'btc')}
+                      {new Intl.NumberFormat().format(position.tokenAmount)} tokens @ {formatValue(position.pricePerToken)}
                     </p>
                   </div>
                   <div className="ml-4 flex-shrink-0">
                     <div className="text-sm text-gray-900 text-right">
-                      Initial: {formatValue(position.value, 'btc')}
+                      Initial: {formatValue(position.value)}
                     </div>
                     <div className="text-sm text-gray-900 text-right">
-                      Current: {formatValue(position.current, 'btc')}
+                      Current: {formatValue(position.current)}
                     </div>
                     <div className={`text-sm ${position.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {position.change >= 0 ? '+' : ''}{position.change}%
