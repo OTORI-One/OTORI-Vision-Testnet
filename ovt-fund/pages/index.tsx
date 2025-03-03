@@ -30,11 +30,22 @@ export default function Dashboard() {
 
   // Calculate OVT price based on NAV
   const ovtPrice = useMemo(() => {
-    const btcValue = Number(navData.totalValue.replace(/[^0-9.]/g, ''));
-    const satsValue = btcValue * SATS_PER_BTC;
-    const pricePerOVT = Math.floor(satsValue / 1000000); // Assuming 1M total OVT supply
+    if (!navData || !navData.totalValue) return 0;
+    
+    // Use the raw sats value directly from navData instead of parsing the formatted string
+    const satsValue = navData.totalValueSats;
+    console.log('NAV in sats:', satsValue);
+    
+    // Get token data from mock-data/token-data.json
+    const tokenSupply = 500000; // Hardcoded from token-data.json
+    console.log('Token supply:', tokenSupply);
+    
+    // Calculate price per token in sats
+    const pricePerOVT = Math.floor(satsValue / tokenSupply);
+    console.log('Calculated price per OVT:', pricePerOVT, 'sats');
+    
     return pricePerOVT;
-  }, [navData.totalValue]);
+  }, [navData]);
 
   // Use the NAV value directly from navData
   const formattedNAV = navData.totalValue;

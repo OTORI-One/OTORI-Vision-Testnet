@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import MultiSigApproval from './MultiSigApproval';
 import PositionManagement from './PositionManagement';
 import TokenMinting from './TokenMinting';
+import RuneMinting from './RuneMinting';
 import TransactionHistory from './TransactionHistory';
 import { useOVTClient } from '../../src/hooks/useOVTClient';
 import { isAdminWallet } from '../../src/utils/adminUtils';
@@ -10,6 +11,7 @@ import { useLaserEyes } from '@omnisat/lasereyes';
 enum AdminView {
   POSITIONS = 'positions',
   MINT = 'mint',
+  RUNE_MINT = 'rune_mint',
   HISTORY = 'history',
 }
 
@@ -79,6 +81,16 @@ export default function AdminDashboard() {
             Mint Tokens
           </button>
           <button
+            onClick={() => setActiveView(AdminView.RUNE_MINT)}
+            className={`px-4 py-2 rounded-md ${
+              activeView === AdminView.RUNE_MINT
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            Mint Runes
+          </button>
+          <button
             onClick={() => setActiveView(AdminView.HISTORY)}
             className={`px-4 py-2 rounded-md ${
               activeView === AdminView.HISTORY
@@ -112,6 +124,9 @@ export default function AdminDashboard() {
             )}
             {activeView === AdminView.MINT && (
               <TokenMinting onActionRequiringMultiSig={handleActionRequiringMultiSig} />
+            )}
+            {activeView === AdminView.RUNE_MINT && (
+              <RuneMinting />
             )}
             {activeView === AdminView.HISTORY && (
               <TransactionHistory />

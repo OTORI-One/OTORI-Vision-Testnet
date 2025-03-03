@@ -1,6 +1,13 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useOVTClient } from '../../src/hooks/useOVTClient';
-import { ArrowUpIcon, ArrowDownIcon } from '@heroicons/react/24/outline';
+import { 
+  CurrencyDollarIcon, 
+  FireIcon, 
+  ArrowPathIcon, 
+  PlusIcon, 
+  MinusIcon 
+} from '@heroicons/react/24/outline';
+import DataSourceIndicator from '../../src/components/DataSourceIndicator';
 
 interface Transaction {
   txid: string;
@@ -19,15 +26,31 @@ interface Transaction {
 export default function TransactionHistory() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState<string>('all');
-  const { getTransactionHistory, isLoading, error, formatValue } = useOVTClient();
+  const { 
+    getTransactionHistory, 
+    isLoading, 
+    error, 
+    formatValue,
+    dataSourceIndicator 
+  } = useOVTClient();
 
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
+        console.log('Fetching transaction history...');
         const history = await getTransactionHistory();
-        setTransactions(history);
+        console.log('Transaction history received:', history);
+        
+        if (history && Array.isArray(history)) {
+          console.log(`Found ${history.length} transactions`);
+          setTransactions(history);
+        } else {
+          console.warn('No transactions found or invalid format:', history);
+          setTransactions([]);
+        }
       } catch (err) {
         console.error('Failed to fetch transaction history:', err);
+        setTransactions([]);
       }
     };
 
@@ -38,118 +61,126 @@ export default function TransactionHistory() {
     filter === 'all' || tx.type === filter
   );
 
+  console.log('Filtered transactions:', filteredTransactions);
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString();
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'confirmed': return 'text-green-600 bg-green-100';
-      case 'pending': return 'text-yellow-600 bg-yellow-100';
-      case 'failed': return 'text-red-600 bg-red-100';
-      default: return 'text-gray-600 bg-gray-100';
+      case 'confirmed': return 'text-green-600';
+      case 'pending': return 'text-amber-600';
+      case 'failed': return 'text-red-600';
+      default: return 'text-gray-600';
     }
   };
 
   const getTypeIcon = (type: string) => {
     switch (type) {
-      case 'mint': return <ArrowDownIcon className="h-5 w-5 text-green-500" />;
-      case 'burn': return <ArrowUpIcon className="h-5 w-5 text-red-500" />;
-      default: return null;
+      case 'mint': return <PlusIcon className="h-5 w-5 text-green-500" />;
+      case 'burn': return <FireIcon className="h-5 w-5 text-red-500" />;
+      case 'transfer': return <ArrowPathIcon className="h-5 w-5 text-blue-500" />;
+      case 'position_entry': return <PlusIcon className="h-5 w-5 text-purple-500" />;
+      case 'position_exit': return <MinusIcon className="h-5 w-5 text-orange-500" />;
+      default: return <CurrencyDollarIcon className="h-5 w-5 text-gray-500" />;
     }
   };
 
   const formatAmount = (tx: Transaction) => {
-    if (tx.type === 'position_entry') {
-      // For position entries, format BTC value
-      return formatValue(tx.amount, 'btc');
-    }
-    // For other transactions, show OVT amount
-    return `${tx.amount.toLocaleString()} OVT`;
+    const currency = tx.details?.currency || 'OVT';
+    return `${tx.amount.toLocaleString()} ${currency}`;
   };
 
+  if (isLoading) {
+    return <div className="p-4 text-center">Loading transaction history...</div>;
+  }
+
+  if (error) {
+    return <div className="p-4 text-center text-red-500">Error: {error}</div>;
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Filter Controls */}
-      <div className="flex justify-between items-center">
-        <div className="flex space-x-4">
+    <div className="bg-white shadow rounded-lg p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold">Transaction History</h2>
+        <div className="flex items-center space-x-2">
+          {dataSourceIndicator && dataSourceIndicator.transaction && (
+            <DataSourceIndicator 
+              isMock={dataSourceIndicator.transaction.isMock}
+              label={dataSourceIndicator.transaction.label}
+              color={dataSourceIndicator.transaction.color}
+              size="sm"
+            />
+          )}
           <select
+            className="border rounded p-1 text-sm"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
           >
             <option value="all">All Transactions</option>
-            <option value="mint">Minting</option>
-            <option value="burn">Burning</option>
-            <option value="transfer">Transfers</option>
-            <option value="position_entry">Position Entries</option>
-            <option value="position_exit">Position Exits</option>
+            <option value="mint">Mint</option>
+            <option value="burn">Burn</option>
+            <option value="transfer">Transfer</option>
+            <option value="position_entry">Position Entry</option>
+            <option value="position_exit">Position Exit</option>
           </select>
         </div>
       </div>
 
-      {/* Transaction List */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        {isLoading ? (
-          <div className="flex justify-center items-center py-12">
-            <div data-testid="loading-spinner" className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          </div>
-        ) : error ? (
-          <div className="p-4 text-red-600 bg-red-50">{error}</div>
-        ) : (
-          <ul role="list" className="divide-y divide-gray-200">
-            {filteredTransactions.map((tx) => (
-              <li key={tx.txid}>
-                <div className="px-4 py-4 sm:px-6">
-                  <div className="flex items-center justify-between">
+      {transactions.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          No transactions found. Transactions will appear here as they occur.
+        </div>
+      ) : filteredTransactions.length === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          No transactions match the selected filter.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Details</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredTransactions.map((tx) => (
+                <tr key={tx.txid} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       {getTypeIcon(tx.type)}
-                      <p className="ml-2 text-sm font-medium text-gray-900">
-                        {tx.type.charAt(0).toUpperCase() + tx.type.slice(1).replace('_', ' ')}
-                      </p>
-                      <span className={`ml-2 px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(tx.status)}`}>
-                        {tx.status}
-                      </span>
+                      <span className="ml-2 capitalize">{tx.type.replace('_', ' ')}</span>
                     </div>
-                    <div className="ml-2 flex-shrink-0 flex">
-                      <p className="text-sm text-gray-500">{formatDate(tx.timestamp)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2 sm:flex sm:justify-between">
-                    <div className="sm:flex">
-                      <p className="flex items-center text-sm text-gray-500">
-                        Amount: {formatAmount(tx)}
-                      </p>
-                      {tx.details.reason && (
-                        <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                          Reason: {tx.details.reason}
-                        </p>
-                      )}
-                    </div>
-                    <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                      <a
-                        href={`https://mempool.space/tx/${tx.txid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800"
-                      >
-                        View on Explorer
-                      </a>
-                    </div>
-                  </div>
-                  {tx.details.signatures && (
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-500">
-                        Signatures: {tx.details.signatures.length}/3
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {formatAmount(tx)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {formatDate(tx.timestamp)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`capitalize ${getStatusColor(tx.status)}`}>
+                      {tx.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {tx.details.reason && <div>Reason: {tx.details.reason}</div>}
+                    {tx.details.position && <div>Position: {tx.details.position}</div>}
+                    {tx.details.signatures && tx.details.signatures.length > 0 && (
+                      <div>Signatures: {tx.details.signatures.length}</div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 } 
